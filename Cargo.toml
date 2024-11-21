@@ -1,0 +1,18 @@
+[package]
+name = "decent-auth-rs"
+version = "0.1.0"
+edition = "2021"
+
+[lib]
+crate-type = ["cdylib"]
+
+[dependencies]
+wasm-bindgen = "0.2"
+mustache = "*"
+serde = { version = "1.0", features = ["derive"] }
+oauth2 = "4.4.2"
+openidconnect = "3.5.0"
+reqwest = { version = "0.12.9", features = ["blocking"] }
+wasm-bindgen-futures = "0.4.45"
+extism-pdk = "1.3.0"
+url = "2.5.3"
