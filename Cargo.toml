@@ -1,5 +1,5 @@
 [package]
-name = "decent-auth-core"
+name = "decent-auth-rs"
 version = "0.1.0"
 edition = "2021"
 
