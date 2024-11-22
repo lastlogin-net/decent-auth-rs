@@ -35,6 +35,9 @@ extern "ExtismHost" {
     fn kv_write(key: &str, value: Vec<u8>); 
 }
 
+const SESSION_PREFIX: &str = "sessions";
+const OAUTH_STATE_PREFIX: &str = "oauth_state";
+
 fn kv_read_json<T: std::fmt::Debug + for<'a> Deserialize<'a>>(key: &str) -> Result<T, DaError> {
     let bytes = unsafe { kv_read(key).unwrap() };
     if bytes[0] != 65 {
@@ -49,11 +52,13 @@ fn kv_write_json<T: Serialize>(key: &str, value: T) {
     unsafe { kv_write(key, bytes).unwrap(); }
 }
 
-const HEADER_TMPL: &str = include_str!("../templates/header.html");
+const INDEX_TMPL: &str = include_str!("../templates/index.html");
 
 #[derive(Serialize)]
-struct HeaderData {
-    name: String,
+struct IndexTmplData {
+    session: Option<Session>,
+    prefix: String,
+    return_target: String,
 }
 
 #[derive(Debug,Serialize,Deserialize)]
@@ -165,20 +170,21 @@ struct Session {
     id_type: String,
 }
 
-fn get_session(req: &DaHttpRequest) -> Result<Session, DaError> {
+fn get_session(req: &DaHttpRequest, prefix: &str) -> Result<Session, DaError> {
 
     let header_val = req.headers.get("Cookie").ok_or(DaError{})?;
 
     let mut session_key_opt: Option<String> = None;
 
     for cook in Cookie::split_parse(&header_val[0]) {
-        if cook.clone()?.name() == "session_key" {
-            session_key_opt = Some(format!("sessions/{}", cook?.value().to_string()));
+        if cook.clone()?.name() == format!("{}_session_key", prefix) {
+            session_key_opt = Some(format!("/{}/{}/{}", prefix, SESSION_PREFIX, cook?.value().to_string()));
             break;
         }
     }
 
     let session_key = session_key_opt.ok_or(DaError{})?;
+    debug!("sk: {}", session_key);
     let session: Session = kv_read_json(&session_key)?;
 
     Ok(session)
@@ -190,20 +196,28 @@ pub extern "C" fn handle(Json(req): Json<DaHttpRequest>) -> FnResult<Json<DaHttp
 
     let parsed_url = Url::parse(&req.url).unwrap();
 
-    let session = get_session(&req);
+    let storage_prefix = extism_pdk::config::get("storage_prefix")
+        .unwrap_or(Some("".to_string()))
+        .unwrap();
+
+    let session = get_session(&req, &storage_prefix);
 
     let res = match parsed_url.path() {
         "/auth/" => {
 
-            let name = if let Ok(session) = session {
-                session.id
-            }
-            else {
-                "Anonymous".to_string()
-            };
+            //let name = if let Ok(session) = session {
+            //    session.id
+            //}
+            //else {
+            //    "Anonymous".to_string()
+            //};
 
-            let template = mustache::compile_str(HEADER_TMPL).unwrap();
-            let data = HeaderData { name };
+            let template = mustache::compile_str(INDEX_TMPL).unwrap();
+            let data = IndexTmplData{ 
+                session: session.ok(),
+                prefix: "/auth/".to_string(),
+                return_target: "".to_string(),
+            };
             let body = template.render_to_string(&data).unwrap();
 
             DaHttpResponse::new(200, &body)
@@ -230,7 +244,7 @@ pub extern "C" fn handle(Json(req): Json<DaHttpRequest>) -> FnResult<Json<DaHttp
                 nonce: nonce.secret().to_string(),
             };
 
-            let state_key = format!("oauth_state/{}", csrf_token.secret());
+            let state_key = format!("/{}/{}/{}", storage_prefix, OAUTH_STATE_PREFIX, csrf_token.secret());
             kv_write_json(&state_key, flow_state);
 
             let mut res = DaHttpResponse::new(303, "Hi there");
@@ -249,7 +263,7 @@ pub extern "C" fn handle(Json(req): Json<DaHttpRequest>) -> FnResult<Json<DaHttp
 
             let state = hash_query["state"].clone();
 
-            let state_key = format!("oauth_state/{}", state);
+            let state_key = format!("/{}/{}/{}", storage_prefix, OAUTH_STATE_PREFIX, state);
             let flow_state: FlowState = kv_read_json(&state_key).unwrap();
 
             let code = hash_query["code"].clone();
@@ -266,7 +280,7 @@ pub extern "C" fn handle(Json(req): Json<DaHttpRequest>) -> FnResult<Json<DaHttp
             let claims = id_token.claims(&client.id_token_verifier(), &nonce).unwrap();
 
             let session_key = CsrfToken::new_random().secret().to_string();
-            let session_cookie = Cookie::build(("session_key", &session_key))
+            let session_cookie = Cookie::build((format!("{}_session_key", storage_prefix), &session_key))
                 .path("/")
                 .secure(true)
                 .http_only(true);
@@ -278,13 +292,13 @@ pub extern "C" fn handle(Json(req): Json<DaHttpRequest>) -> FnResult<Json<DaHttp
                 id: claims.subject().to_string(),
             };
 
-            let kv_session_key = format!("sessions/{}", &session_key);
+            let kv_session_key = format!("/{}/{}/{}", storage_prefix, SESSION_PREFIX, &session_key);
             kv_write_json(&kv_session_key, session);
 
             let mut res = DaHttpResponse::new(303, "/auth/callback");
 
             res.headers = BTreeMap::from([
-                ("Location".to_string(), vec!["/auth/".to_string()]),
+                ("Location".to_string(), vec!["/".to_string()]),
                 ("Set-Cookie".to_string(), vec![session_cookie.to_string()])
             ]);
 
