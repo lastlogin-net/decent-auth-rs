@@ -3,12 +3,31 @@ use serde::{Serialize,Deserialize};
 use url::{Url};
 use std::collections::{HashMap,BTreeMap};
 use std::{error::Error, fmt};
+use cookie::Cookie;
 use openidconnect::{
     RedirectUrl,ClientId,IssuerUrl,HttpRequest,HttpResponse,PkceCodeChallenge,
-    Scope,Nonce,CsrfToken,PkceCodeVerifier,AuthorizationCode,
+    Scope,Nonce,CsrfToken,PkceCodeVerifier,AuthorizationCode, TokenResponse,
     core::{CoreClient,CoreProviderMetadata,CoreAuthenticationFlow},
     http::{HeaderMap,StatusCode},
 };
+
+
+//struct KvReadResult {
+//    code: u32,
+//    data: Vec<u8>,
+//}
+//
+//impl extism_pdk::FromBytesOwned for KvReadResult {
+//    fn from_bytes_owned(data: &[u8]) -> Result<Self, extism_pdk::Error> {
+//
+//        let res = KvReadResult{
+//            code: 0,
+//            data: Vec::new(),
+//        };
+//
+//        Ok(res)
+//    }
+//}
 
 #[host_fn]
 extern "ExtismHost" {
@@ -16,10 +35,13 @@ extern "ExtismHost" {
     fn kv_write(key: &str, value: Vec<u8>); 
 }
 
-fn kv_read_json<T: for<'a> Deserialize<'a>>(key: &str) -> T {
+fn kv_read_json<T: std::fmt::Debug + for<'a> Deserialize<'a>>(key: &str) -> Result<T, DaError> {
     let bytes = unsafe { kv_read(key).unwrap() };
-    let s = std::str::from_utf8(&bytes).unwrap();
-    serde_json::from_str(s).unwrap()
+    if bytes[0] != 65 {
+        return Err(DaError{});
+    }
+    let s = std::str::from_utf8(&bytes[1..]).unwrap();
+    Ok(serde_json::from_str::<T>(s).unwrap())
 }
 
 fn kv_write_json<T: Serialize>(key: &str, value: T) {
@@ -58,6 +80,12 @@ impl DaHttpResponse {
     }
 }
 
+#[derive(Debug,Serialize,Deserialize)]
+struct FlowState {
+    pkce_verifier: String,
+    nonce: String,
+}
+
 pub struct ExtismHttpClient {
 }
 
@@ -67,7 +95,7 @@ impl ExtismHttpClient {
     }
 }
 
-#[derive(Debug)]
+#[derive(Debug,Deserialize)]
 struct DaError {
 }
 
@@ -79,9 +107,19 @@ impl fmt::Display for DaError {
     }
 }
 
-fn requester(req: HttpRequest) -> Result<HttpResponse, DaError> {
+impl From<cookie::ParseError> for DaError {
+    fn from(_value: cookie::ParseError) -> Self {
+        Self{}
+    }
+}
 
-    debug!("request: {:?}", req.url);
+impl From<extism_pdk::Error> for DaError {
+    fn from(_value: extism_pdk::Error) -> Self {
+        Self{}
+    }
+}
+
+fn requester(req: HttpRequest) -> Result<HttpResponse, DaError> {
 
     let mut ereq = extism_pdk::HttpRequest{
         url: req.url.to_string(),
@@ -94,10 +132,6 @@ fn requester(req: HttpRequest) -> Result<HttpResponse, DaError> {
     }
 
     let eres = http::request::<Vec<u8>>(&ereq, Some(req.body)).unwrap();
-
-    debug!("eres: {:?}", eres.status_code());
-
-    debug!("heds: {:?}", eres.headers());
 
     let res = HttpResponse{
         status_code: StatusCode::from_u16(eres.status_code()).unwrap(),
@@ -126,9 +160,28 @@ fn get_client() -> CoreClient {
 }
 
 #[derive(Debug,Serialize,Deserialize)]
-struct FlowState {
-    pkce_verifier: String,
-    nonce: String,
+struct Session {
+    id: String,
+    id_type: String,
+}
+
+fn get_session(req: &DaHttpRequest) -> Result<Session, DaError> {
+
+    let header_val = req.headers.get("Cookie").ok_or(DaError{})?;
+
+    let mut session_key_opt: Option<String> = None;
+
+    for cook in Cookie::split_parse(&header_val[0]) {
+        if cook.clone()?.name() == "session_key" {
+            session_key_opt = Some(format!("sessions/{}", cook?.value().to_string()));
+            break;
+        }
+    }
+
+    let session_key = session_key_opt.ok_or(DaError{})?;
+    let session: Session = kv_read_json(&session_key)?;
+
+    Ok(session)
 }
 
 
@@ -137,12 +190,20 @@ pub extern "C" fn handle(Json(req): Json<DaHttpRequest>) -> FnResult<Json<DaHttp
 
     let parsed_url = Url::parse(&req.url).unwrap();
 
+    let session = get_session(&req);
+
     let res = match parsed_url.path() {
-        "/auth" => {
+        "/auth/" => {
+
+            let name = if let Ok(session) = session {
+                session.id
+            }
+            else {
+                "Anonymous".to_string()
+            };
 
             let template = mustache::compile_str(HEADER_TMPL).unwrap();
-            //let data = HeaderData { name: name.to_string() };
-            let data = HeaderData { name: "Anders".to_string() };
+            let data = HeaderData { name };
             let body = template.render_to_string(&data).unwrap();
 
             DaHttpResponse::new(200, &body)
@@ -189,7 +250,7 @@ pub extern "C" fn handle(Json(req): Json<DaHttpRequest>) -> FnResult<Json<DaHttp
             let state = hash_query["state"].clone();
 
             let state_key = format!("oauth_state/{}", state);
-            let flow_state: FlowState = kv_read_json(&state_key);
+            let flow_state: FlowState = kv_read_json(&state_key).unwrap();
 
             let code = hash_query["code"].clone();
 
@@ -199,9 +260,35 @@ pub extern "C" fn handle(Json(req): Json<DaHttpRequest>) -> FnResult<Json<DaHttp
                     .set_pkce_verifier(PkceCodeVerifier::new(flow_state.pkce_verifier))
                     .request(requester).unwrap();
 
-            debug!("token_res: {:?}", token_response);
+            let id_token = token_response.id_token().unwrap();
 
-            DaHttpResponse::new(200, "/auth/callback")
+            let nonce = Nonce::new(flow_state.nonce);
+            let claims = id_token.claims(&client.id_token_verifier(), &nonce).unwrap();
+
+            let session_key = CsrfToken::new_random().secret().to_string();
+            let session_cookie = Cookie::build(("session_key", &session_key))
+                .path("/")
+                .secure(true)
+                .http_only(true);
+
+            debug!("cook: {:?}", session_cookie.to_string());
+
+            let session = Session{
+                id_type: "email".to_string(),
+                id: claims.subject().to_string(),
+            };
+
+            let kv_session_key = format!("sessions/{}", &session_key);
+            kv_write_json(&kv_session_key, session);
+
+            let mut res = DaHttpResponse::new(303, "/auth/callback");
+
+            res.headers = BTreeMap::from([
+                ("Location".to_string(), vec!["/auth/".to_string()]),
+                ("Set-Cookie".to_string(), vec![session_cookie.to_string()])
+            ]);
+
+            res
         },
         _ => {
             DaHttpResponse::new(404, "Not found")
