@@ -1,4 +1,4 @@
-use extism_pdk::{debug,plugin_fn,FnResult,Json,http};
+use extism_pdk::{debug,plugin_fn,host_fn,FnResult,Json,http};
 use serde::{Serialize,Deserialize};
 use url::{Url};
 use std::collections::{HashMap,BTreeMap};
@@ -9,6 +9,23 @@ use openidconnect::{
     core::{CoreClient,CoreProviderMetadata,CoreAuthenticationFlow},
     http::{HeaderMap,StatusCode},
 };
+
+#[host_fn]
+extern "ExtismHost" {
+    fn kv_read(key: &str) -> Vec<u8>; 
+    fn kv_write(key: &str, value: Vec<u8>); 
+}
+
+fn kv_read_json<T: for<'a> Deserialize<'a>>(key: &str) -> T {
+    let bytes = unsafe { kv_read(key).unwrap() };
+    let s = std::str::from_utf8(&bytes).unwrap();
+    serde_json::from_str(s).unwrap()
+}
+
+fn kv_write_json<T: Serialize>(key: &str, value: T) {
+    let bytes = serde_json::to_vec(&value).unwrap();
+    unsafe { kv_write(key, bytes).unwrap(); }
+}
 
 const HEADER_TMPL: &str = include_str!("../templates/header.html");
 
@@ -108,6 +125,12 @@ fn get_client() -> CoreClient {
     client
 }
 
+#[derive(Debug,Serialize,Deserialize)]
+struct FlowState {
+    pkce_verifier: String,
+    nonce: String,
+}
+
 
 #[plugin_fn]
 pub extern "C" fn handle(Json(req): Json<DaHttpRequest>) -> FnResult<Json<DaHttpResponse>> {
@@ -141,10 +164,13 @@ pub extern "C" fn handle(Json(req): Json<DaHttpRequest>) -> FnResult<Json<DaHttp
                 .set_pkce_challenge(pkce_challenge)
                 .url();
 
-            let pkce_key = format!("{}/pkce_verifier", csrf_token.secret());
-            extism_pdk::var::set(pkce_key, pkce_verifier.secret()).unwrap();
-            let nonce_key = format!("{}/nonce", csrf_token.secret());
-            extism_pdk::var::set(nonce_key, nonce.secret()).unwrap();
+            let flow_state = FlowState{
+                pkce_verifier: pkce_verifier.secret().to_string(),
+                nonce: nonce.secret().to_string(),
+            };
+
+            let state_key = format!("oauth_state/{}", csrf_token.secret());
+            kv_write_json(&state_key, flow_state);
 
             let mut res = DaHttpResponse::new(303, "Hi there");
 
@@ -162,20 +188,15 @@ pub extern "C" fn handle(Json(req): Json<DaHttpRequest>) -> FnResult<Json<DaHttp
 
             let state = hash_query["state"].clone();
 
-            let pkce_key = format!("{}/pkce_verifier", state);
-            let nonce_key = format!("{}/nonce", state);
-
-            let pkce_verifier = extism_pdk::var::get::<String>(&pkce_key).unwrap().unwrap();
-            extism_pdk::var::remove(pkce_key).unwrap();
-            let _nonce = extism_pdk::var::get::<String>(&nonce_key).unwrap().unwrap();
-            extism_pdk::var::remove(nonce_key).unwrap();
+            let state_key = format!("oauth_state/{}", state);
+            let flow_state: FlowState = kv_read_json(&state_key);
 
             let code = hash_query["code"].clone();
 
             let token_response =
                 client
                     .exchange_code(AuthorizationCode::new(code))
-                    .set_pkce_verifier(PkceCodeVerifier::new(pkce_verifier))
+                    .set_pkce_verifier(PkceCodeVerifier::new(flow_state.pkce_verifier))
                     .request(requester).unwrap();
 
             debug!("token_res: {:?}", token_response);

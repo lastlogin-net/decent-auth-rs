@@ -229,6 +229,7 @@ dependencies = [
  "mustache",
  "openidconnect",
  "serde",
+ "serde_json",
  "url",
 ]
 
