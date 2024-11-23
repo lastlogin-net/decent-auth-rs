@@ -2,7 +2,7 @@ use extism_pdk::{debug,plugin_fn,host_fn,FnResult,Json,http};
 use serde::{Serialize,Deserialize};
 use url::{Url};
 use std::collections::{HashMap,BTreeMap};
-use std::{error::Error, fmt};
+use std::{fmt};
 use cookie::{Cookie,time::Duration};
 use openidconnect::{
     RedirectUrl,ClientId,IssuerUrl,HttpRequest,HttpResponse,PkceCodeChallenge,
@@ -11,6 +11,7 @@ use openidconnect::{
     http::{HeaderMap,StatusCode},
 };
 
+mod error;
 
 //struct KvReadResult {
 //    code: u32,
@@ -39,7 +40,7 @@ extern "ExtismHost" {
 const SESSION_PREFIX: &str = "sessions";
 const OAUTH_STATE_PREFIX: &str = "oauth_state";
 
-fn kv_read_json<T: std::fmt::Debug + for<'a> Deserialize<'a>>(key: &str) -> Result<T, DaError> {
+fn kv_read_json<T: std::fmt::Debug + for<'a> Deserialize<'a>>(key: &str) -> std::result::Result<T, DaError> {
     let bytes = unsafe { kv_read(key).unwrap() };
     if bytes[0] != 65 {
         return Err(DaError{});
@@ -48,9 +49,10 @@ fn kv_read_json<T: std::fmt::Debug + for<'a> Deserialize<'a>>(key: &str) -> Resu
     Ok(serde_json::from_str::<T>(s).unwrap())
 }
 
-fn kv_write_json<T: Serialize>(key: &str, value: T) {
-    let bytes = serde_json::to_vec(&value).unwrap();
-    unsafe { kv_write(key, bytes).unwrap(); }
+fn kv_write_json<T: Serialize>(key: &str, value: T) -> error::Result<()> {
+    let bytes = serde_json::to_vec(&value)?;
+    unsafe { kv_write(key, bytes)? };
+    Ok(())
 }
 
 const INDEX_TMPL: &str = include_str!("../templates/index.html");
@@ -107,7 +109,7 @@ impl ExtismHttpClient {
 struct DaError {
 }
 
-impl Error for DaError {}
+impl std::error::Error for DaError {}
 
 impl fmt::Display for DaError {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
@@ -127,7 +129,7 @@ impl From<extism_pdk::Error> for DaError {
     }
 }
 
-fn requester(req: HttpRequest) -> Result<HttpResponse, DaError> {
+fn requester(req: HttpRequest) -> std::result::Result<HttpResponse, DaError> {
 
     let mut ereq = extism_pdk::HttpRequest{
         url: req.url.to_string(),
@@ -174,7 +176,7 @@ struct Session {
     id_type: String,
 }
 
-fn get_session(req: &DaHttpRequest, prefix: &str) -> Result<Session, DaError> {
+fn get_session(req: &DaHttpRequest, prefix: &str) -> std::result::Result<Session, DaError> {
 
     let header_val = req.headers.get("Cookie").ok_or(DaError{})?;
 
