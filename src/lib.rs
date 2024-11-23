@@ -3,7 +3,7 @@ use serde::{Serialize,Deserialize};
 use url::{Url};
 use std::collections::{HashMap,BTreeMap};
 use std::{error::Error, fmt};
-use cookie::Cookie;
+use cookie::{Cookie,time::Duration};
 use openidconnect::{
     RedirectUrl,ClientId,IssuerUrl,HttpRequest,HttpResponse,PkceCodeChallenge,
     Scope,Nonce,CsrfToken,PkceCodeVerifier,AuthorizationCode, TokenResponse,
@@ -33,6 +33,7 @@ use openidconnect::{
 extern "ExtismHost" {
     fn kv_read(key: &str) -> Vec<u8>; 
     fn kv_write(key: &str, value: Vec<u8>); 
+    fn kv_delete(key: &str); 
 }
 
 const SESSION_PREFIX: &str = "sessions";
@@ -66,6 +67,7 @@ struct DaHttpRequest {
     pub url: String,
     pub headers: BTreeMap<String, Vec<String>>,
     pub method: Option<String>,
+    pub body: String,
 }
 
 #[derive(Debug,Serialize)]
@@ -89,6 +91,7 @@ impl DaHttpResponse {
 struct FlowState {
     pkce_verifier: String,
     nonce: String,
+    return_target: String,
 }
 
 pub struct ExtismHttpClient {
@@ -184,10 +187,34 @@ fn get_session(req: &DaHttpRequest, prefix: &str) -> Result<Session, DaError> {
     }
 
     let session_key = session_key_opt.ok_or(DaError{})?;
-    debug!("sk: {}", session_key);
     let session: Session = kv_read_json(&session_key)?;
 
     Ok(session)
+}
+
+fn get_return_target(req: &DaHttpRequest) -> String {
+
+    let default = "/".to_string();
+    if let Ok(parsed_url) = Url::parse(&req.url) {
+        let hash_query: HashMap<_, _> = parsed_url.query_pairs().into_owned().collect();
+        if let Some(return_target) = hash_query.get("return_target")  {
+            if return_target.starts_with("/") {
+                return return_target.to_string();
+            }
+        }
+    }
+
+    //debug!("body: {:?}", req.body);
+    if let Ok(parsed_body) = Url::parse(&format!("http://example.com/?{}", &req.body)) {
+        let hash_query: HashMap<_, _> = parsed_body.query_pairs().into_owned().collect();
+        if let Some(return_target) = hash_query.get("return_target")  {
+            if return_target.starts_with("/") {
+                return return_target.to_string();
+            }
+        }
+    }
+
+    default
 }
 
 
@@ -215,8 +242,8 @@ pub extern "C" fn handle(Json(req): Json<DaHttpRequest>) -> FnResult<Json<DaHttp
             let template = mustache::compile_str(INDEX_TMPL).unwrap();
             let data = IndexTmplData{ 
                 session: session.ok(),
-                prefix: "/auth/".to_string(),
-                return_target: "".to_string(),
+                prefix: "/auth".to_string(),
+                return_target: get_return_target(&req),
             };
             let body = template.render_to_string(&data).unwrap();
 
@@ -242,6 +269,7 @@ pub extern "C" fn handle(Json(req): Json<DaHttpRequest>) -> FnResult<Json<DaHttp
             let flow_state = FlowState{
                 pkce_verifier: pkce_verifier.secret().to_string(),
                 nonce: nonce.secret().to_string(),
+                return_target: get_return_target(&req),
             };
 
             let state_key = format!("/{}/{}/{}", storage_prefix, OAUTH_STATE_PREFIX, csrf_token.secret());
@@ -285,8 +313,6 @@ pub extern "C" fn handle(Json(req): Json<DaHttpRequest>) -> FnResult<Json<DaHttp
                 .secure(true)
                 .http_only(true);
 
-            debug!("cook: {:?}", session_cookie.to_string());
-
             let session = Session{
                 id_type: "email".to_string(),
                 id: claims.subject().to_string(),
@@ -298,8 +324,26 @@ pub extern "C" fn handle(Json(req): Json<DaHttpRequest>) -> FnResult<Json<DaHttp
             let mut res = DaHttpResponse::new(303, "/auth/callback");
 
             res.headers = BTreeMap::from([
-                ("Location".to_string(), vec!["/".to_string()]),
+                ("Location".to_string(), vec![flow_state.return_target]),
                 ("Set-Cookie".to_string(), vec![session_cookie.to_string()])
+            ]);
+
+            res
+        },
+        "/auth/logout" => {
+
+            let delete_session_cookie = Cookie::build((format!("{}_session_key", storage_prefix), ""))
+                .max_age(Duration::seconds(-1))
+                .path("/")
+                .secure(true)
+                .http_only(true);
+
+            let return_target = get_return_target(&req);
+
+            let mut res = DaHttpResponse::new(303, "/auth/callback");
+            res.headers = BTreeMap::from([
+                ("Location".to_string(), vec![return_target]),
+                ("Set-Cookie".to_string(), vec![delete_session_cookie.to_string()])
             ]);
 
             res
