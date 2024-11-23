@@ -150,19 +150,20 @@ fn requester(req: HttpRequest) -> Result<HttpResponse, DaError> {
     Ok(res)
 }
 
-fn get_client() -> CoreClient {
+fn get_client(path_prefix: &str) -> CoreClient {
     let provider_metadata = CoreProviderMetadata::discover(
         &IssuerUrl::new("https://lastlogin.net".to_string()).unwrap(),
         requester,
     ).expect("meta failed");
 
+    let uri = format!("http://localhost:3000{}/callback", path_prefix);
     let client =
         CoreClient::from_provider_metadata(
             provider_metadata,
             ClientId::new("http://localhost:3000".to_string()),
             None,
         )
-        .set_redirect_uri(RedirectUrl::new("http://localhost:3000/auth/callback".to_string()).unwrap());
+        .set_redirect_uri(RedirectUrl::new(uri).unwrap());
 
     client
 }
@@ -227,132 +228,135 @@ pub extern "C" fn handle(Json(req): Json<DaHttpRequest>) -> FnResult<Json<DaHttp
         .unwrap_or(Some("".to_string()))
         .unwrap();
 
+    let path_prefix = extism_pdk::config::get("path_prefix")
+        .unwrap_or(Some("".to_string()))
+        .unwrap();
+
     let session = get_session(&req, &storage_prefix);
 
-    let res = match parsed_url.path() {
-        "/auth/" => {
+    let path = parsed_url.path();
 
-            //let name = if let Ok(session) = session {
-            //    session.id
-            //}
-            //else {
-            //    "Anonymous".to_string()
-            //};
+    let res = if path == path_prefix {
 
-            let template = mustache::compile_str(INDEX_TMPL).unwrap();
-            let data = IndexTmplData{ 
-                session: session.ok(),
-                prefix: "/auth".to_string(),
-                return_target: get_return_target(&req),
-            };
-            let body = template.render_to_string(&data).unwrap();
+        //let name = if let Ok(session) = session {
+        //    session.id
+        //}
+        //else {
+        //    "Anonymous".to_string()
+        //};
 
-            DaHttpResponse::new(200, &body)
-        },
-        "/auth/lastlogin" => {
+        let template = mustache::compile_str(INDEX_TMPL).unwrap();
+        let data = IndexTmplData{ 
+            session: session.ok(),
+            prefix: path_prefix,
+            return_target: get_return_target(&req),
+        };
+        let body = template.render_to_string(&data).unwrap();
 
-            let client = get_client();
+        DaHttpResponse::new(200, &body)
+    }
+    else if path == format!("{}/lastlogin", path_prefix) {
 
-            let (pkce_challenge, pkce_verifier) = PkceCodeChallenge::new_random_sha256();
+        let client = get_client(&path_prefix);
 
-            let (auth_url, csrf_token, nonce) = client
-                .authorize_url(
-                    CoreAuthenticationFlow::AuthorizationCode,
-                    CsrfToken::new_random,
-                    Nonce::new_random,
-                )
-                .add_scope(Scope::new("email".to_string()))
-                .add_scope(Scope::new("profile".to_string()))
-                .set_pkce_challenge(pkce_challenge)
-                .url();
+        let (pkce_challenge, pkce_verifier) = PkceCodeChallenge::new_random_sha256();
 
-            let flow_state = FlowState{
-                pkce_verifier: pkce_verifier.secret().to_string(),
-                nonce: nonce.secret().to_string(),
-                return_target: get_return_target(&req),
-            };
+        let (auth_url, csrf_token, nonce) = client
+            .authorize_url(
+                CoreAuthenticationFlow::AuthorizationCode,
+                CsrfToken::new_random,
+                Nonce::new_random,
+            )
+            .add_scope(Scope::new("email".to_string()))
+            .add_scope(Scope::new("profile".to_string()))
+            .set_pkce_challenge(pkce_challenge)
+            .url();
 
-            let state_key = format!("/{}/{}/{}", storage_prefix, OAUTH_STATE_PREFIX, csrf_token.secret());
-            kv_write_json(&state_key, flow_state);
+        let flow_state = FlowState{
+            pkce_verifier: pkce_verifier.secret().to_string(),
+            nonce: nonce.secret().to_string(),
+            return_target: get_return_target(&req),
+        };
 
-            let mut res = DaHttpResponse::new(303, "Hi there");
+        let state_key = format!("/{}/{}/{}", storage_prefix, OAUTH_STATE_PREFIX, csrf_token.secret());
+        kv_write_json(&state_key, flow_state);
 
-            res.headers = BTreeMap::from([
-                ("Location".to_string(), vec![format!("{}", auth_url).to_string()]),
-            ]);
+        let mut res = DaHttpResponse::new(303, "Hi there");
 
-            res
-        }
-        "/auth/callback" => {
+        res.headers = BTreeMap::from([
+            ("Location".to_string(), vec![format!("{}", auth_url).to_string()]),
+        ]);
 
-            let hash_query: HashMap<_, _> = parsed_url.query_pairs().into_owned().collect();
+        res
+    }
+    else if path == format!("{}/callback", path_prefix) {
 
-            let client = get_client();
+        let hash_query: HashMap<_, _> = parsed_url.query_pairs().into_owned().collect();
 
-            let state = hash_query["state"].clone();
+        let client = get_client(&path_prefix);
 
-            let state_key = format!("/{}/{}/{}", storage_prefix, OAUTH_STATE_PREFIX, state);
-            let flow_state: FlowState = kv_read_json(&state_key).unwrap();
+        let state = hash_query["state"].clone();
 
-            let code = hash_query["code"].clone();
+        let state_key = format!("/{}/{}/{}", storage_prefix, OAUTH_STATE_PREFIX, state);
+        let flow_state: FlowState = kv_read_json(&state_key).unwrap();
 
-            let token_response =
-                client
-                    .exchange_code(AuthorizationCode::new(code))
-                    .set_pkce_verifier(PkceCodeVerifier::new(flow_state.pkce_verifier))
-                    .request(requester).unwrap();
+        let code = hash_query["code"].clone();
 
-            let id_token = token_response.id_token().unwrap();
+        let token_response =
+            client
+                .exchange_code(AuthorizationCode::new(code))
+                .set_pkce_verifier(PkceCodeVerifier::new(flow_state.pkce_verifier))
+                .request(requester).unwrap();
 
-            let nonce = Nonce::new(flow_state.nonce);
-            let claims = id_token.claims(&client.id_token_verifier(), &nonce).unwrap();
+        let id_token = token_response.id_token().unwrap();
 
-            let session_key = CsrfToken::new_random().secret().to_string();
-            let session_cookie = Cookie::build((format!("{}_session_key", storage_prefix), &session_key))
-                .path("/")
-                .secure(true)
-                .http_only(true);
+        let nonce = Nonce::new(flow_state.nonce);
+        let claims = id_token.claims(&client.id_token_verifier(), &nonce).unwrap();
 
-            let session = Session{
-                id_type: "email".to_string(),
-                id: claims.subject().to_string(),
-            };
+        let session_key = CsrfToken::new_random().secret().to_string();
+        let session_cookie = Cookie::build((format!("{}_session_key", storage_prefix), &session_key))
+            .path("/")
+            .secure(true)
+            .http_only(true);
 
-            let kv_session_key = format!("/{}/{}/{}", storage_prefix, SESSION_PREFIX, &session_key);
-            kv_write_json(&kv_session_key, session);
+        let session = Session{
+            id_type: "email".to_string(),
+            id: claims.subject().to_string(),
+        };
 
-            let mut res = DaHttpResponse::new(303, "/auth/callback");
+        let kv_session_key = format!("/{}/{}/{}", storage_prefix, SESSION_PREFIX, &session_key);
+        kv_write_json(&kv_session_key, session);
 
-            res.headers = BTreeMap::from([
-                ("Location".to_string(), vec![flow_state.return_target]),
-                ("Set-Cookie".to_string(), vec![session_cookie.to_string()])
-            ]);
+        let mut res = DaHttpResponse::new(303, &format!("{}/callback", path_prefix));
 
-            res
-        },
-        "/auth/logout" => {
+        res.headers = BTreeMap::from([
+            ("Location".to_string(), vec![flow_state.return_target]),
+            ("Set-Cookie".to_string(), vec![session_cookie.to_string()])
+        ]);
 
-            let delete_session_cookie = Cookie::build((format!("{}_session_key", storage_prefix), ""))
-                .max_age(Duration::seconds(-1))
-                .path("/")
-                .secure(true)
-                .http_only(true);
+        res
+    }
+    else if path == format!("{}/logout", path_prefix) {
 
-            let return_target = get_return_target(&req);
+        let delete_session_cookie = Cookie::build((format!("{}_session_key", storage_prefix), ""))
+            .max_age(Duration::seconds(-1))
+            .path("/")
+            .secure(true)
+            .http_only(true);
 
-            let mut res = DaHttpResponse::new(303, "/auth/callback");
-            res.headers = BTreeMap::from([
-                ("Location".to_string(), vec![return_target]),
-                ("Set-Cookie".to_string(), vec![delete_session_cookie.to_string()])
-            ]);
+        let return_target = get_return_target(&req);
 
-            res
-        },
-        _ => {
-            DaHttpResponse::new(404, "Not found")
-        }
+        let mut res = DaHttpResponse::new(303, &format!("{}/callback", path_prefix));
+        res.headers = BTreeMap::from([
+            ("Location".to_string(), vec![return_target]),
+            ("Set-Cookie".to_string(), vec![delete_session_cookie.to_string()])
+        ]);
+
+        res
+    }
+    else {
+        DaHttpResponse::new(404, "Not found")
     };
-
 
     Ok(Json(res))
 }
