@@ -152,17 +152,19 @@ fn requester(req: HttpRequest) -> std::result::Result<HttpResponse, DaError> {
     Ok(res)
 }
 
-fn get_client(path_prefix: &str) -> CoreClient {
+fn get_client(path_prefix: &str, parsed_url: &Url) -> CoreClient {
     let provider_metadata = CoreProviderMetadata::discover(
         &IssuerUrl::new("https://lastlogin.net".to_string()).unwrap(),
         requester,
     ).expect("meta failed");
 
-    let uri = format!("http://localhost:3000{}/callback", path_prefix);
+    let host = parsed_url.host().unwrap();
+
+    let uri = format!("https://{host}{path_prefix}/callback");
     let client =
         CoreClient::from_provider_metadata(
             provider_metadata,
-            ClientId::new("http://localhost:3000".to_string()),
+            ClientId::new(format!("https://{host}")),
             None,
         )
         .set_redirect_uri(RedirectUrl::new(uri).unwrap());
@@ -266,7 +268,7 @@ fn handle(req: DaHttpRequest, storage_prefix: &str, path_prefix: &str) -> error:
     }
     else if path == format!("{}/lastlogin", path_prefix) {
 
-        let client = get_client(&path_prefix);
+        let client = get_client(&path_prefix, &parsed_url);
 
         let (pkce_challenge, pkce_verifier) = PkceCodeChallenge::new_random_sha256();
 
@@ -302,7 +304,7 @@ fn handle(req: DaHttpRequest, storage_prefix: &str, path_prefix: &str) -> error:
 
         let hash_query: HashMap<_, _> = parsed_url.query_pairs().into_owned().collect();
 
-        let client = get_client(&path_prefix);
+        let client = get_client(&path_prefix, &parsed_url);
 
         let state = hash_query["state"].clone();
 
