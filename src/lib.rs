@@ -1,4 +1,4 @@
-use extism_pdk::{debug,plugin_fn,host_fn,FnResult,Json,http};
+use extism_pdk::{plugin_fn,host_fn,FnResult,Json,http};
 use serde::{Serialize,Deserialize};
 use url::{Url};
 use std::collections::{HashMap,BTreeMap};
@@ -40,13 +40,13 @@ extern "ExtismHost" {
 const SESSION_PREFIX: &str = "sessions";
 const OAUTH_STATE_PREFIX: &str = "oauth_state";
 
-fn kv_read_json<T: std::fmt::Debug + for<'a> Deserialize<'a>>(key: &str) -> std::result::Result<T, DaError> {
-    let bytes = unsafe { kv_read(key).unwrap() };
+fn kv_read_json<T: std::fmt::Debug + for<'a> Deserialize<'a>>(key: &str) -> error::Result<T> {
+    let bytes = unsafe { kv_read(key)? };
     if bytes[0] != 65 {
-        return Err(DaError{});
+        return Err(Box::new(DaError{}));
     }
-    let s = std::str::from_utf8(&bytes[1..]).unwrap();
-    Ok(serde_json::from_str::<T>(s).unwrap())
+    let s = std::str::from_utf8(&bytes[1..])?;
+    Ok(serde_json::from_str::<T>(s)?)
 }
 
 fn kv_write_json<T: Serialize>(key: &str, value: T) -> error::Result<()> {
@@ -176,7 +176,7 @@ struct Session {
     id_type: String,
 }
 
-fn get_session(req: &DaHttpRequest, prefix: &str) -> std::result::Result<Session, DaError> {
+fn get_session(req: &DaHttpRequest, prefix: &str) -> error::Result<Session> {
 
     let header_val = req.headers.get("Cookie").ok_or(DaError{})?;
 
@@ -222,17 +222,24 @@ fn get_return_target(req: &DaHttpRequest) -> String {
 
 
 #[plugin_fn]
-pub extern "C" fn handle(Json(req): Json<DaHttpRequest>) -> FnResult<Json<DaHttpResponse>> {
+pub extern "C" fn extism_handle(Json(req): Json<DaHttpRequest>) -> FnResult<Json<DaHttpResponse>> {
 
-    let parsed_url = Url::parse(&req.url).unwrap();
+    let storage_prefix = extism_pdk::config::get("storage_prefix")?.unwrap_or("".to_string());
+    let path_prefix = extism_pdk::config::get("path_prefix")?.unwrap_or("".to_string());
 
-    let storage_prefix = extism_pdk::config::get("storage_prefix")
-        .unwrap_or(Some("".to_string()))
-        .unwrap();
+    let result = handle(req, &storage_prefix, &path_prefix);
 
-    let path_prefix = extism_pdk::config::get("path_prefix")
-        .unwrap_or(Some("".to_string()))
-        .unwrap();
+    if let Ok(res) = result {
+        Ok(Json(res))
+    }
+    else {
+        Err(extism_pdk::Error::msg("call to handle failed").into())
+    }
+}
+
+fn handle(req: DaHttpRequest, storage_prefix: &str, path_prefix: &str) -> error::Result<DaHttpResponse> {
+
+    let parsed_url = Url::parse(&req.url)?; 
 
     let session = get_session(&req, &storage_prefix);
 
@@ -247,13 +254,13 @@ pub extern "C" fn handle(Json(req): Json<DaHttpRequest>) -> FnResult<Json<DaHttp
         //    "Anonymous".to_string()
         //};
 
-        let template = mustache::compile_str(INDEX_TMPL).unwrap();
+        let template = mustache::compile_str(INDEX_TMPL)?;
         let data = IndexTmplData{ 
             session: session.ok(),
-            prefix: path_prefix,
+            prefix: path_prefix.to_string(),
             return_target: get_return_target(&req),
         };
-        let body = template.render_to_string(&data).unwrap();
+        let body = template.render_to_string(&data)?;
 
         DaHttpResponse::new(200, &body)
     }
@@ -281,7 +288,7 @@ pub extern "C" fn handle(Json(req): Json<DaHttpRequest>) -> FnResult<Json<DaHttp
         };
 
         let state_key = format!("/{}/{}/{}", storage_prefix, OAUTH_STATE_PREFIX, csrf_token.secret());
-        kv_write_json(&state_key, flow_state);
+        kv_write_json(&state_key, flow_state)?;
 
         let mut res = DaHttpResponse::new(303, "Hi there");
 
@@ -300,7 +307,7 @@ pub extern "C" fn handle(Json(req): Json<DaHttpRequest>) -> FnResult<Json<DaHttp
         let state = hash_query["state"].clone();
 
         let state_key = format!("/{}/{}/{}", storage_prefix, OAUTH_STATE_PREFIX, state);
-        let flow_state: FlowState = kv_read_json(&state_key).unwrap();
+        let flow_state: FlowState = kv_read_json(&state_key)?;
 
         let code = hash_query["code"].clone();
 
@@ -308,12 +315,12 @@ pub extern "C" fn handle(Json(req): Json<DaHttpRequest>) -> FnResult<Json<DaHttp
             client
                 .exchange_code(AuthorizationCode::new(code))
                 .set_pkce_verifier(PkceCodeVerifier::new(flow_state.pkce_verifier))
-                .request(requester).unwrap();
+                .request(requester)?;
 
         let id_token = token_response.id_token().unwrap();
 
         let nonce = Nonce::new(flow_state.nonce);
-        let claims = id_token.claims(&client.id_token_verifier(), &nonce).unwrap();
+        let claims = id_token.claims(&client.id_token_verifier(), &nonce)?;
 
         let session_key = CsrfToken::new_random().secret().to_string();
         let session_cookie = Cookie::build((format!("{}_session_key", storage_prefix), &session_key))
@@ -327,7 +334,7 @@ pub extern "C" fn handle(Json(req): Json<DaHttpRequest>) -> FnResult<Json<DaHttp
         };
 
         let kv_session_key = format!("/{}/{}/{}", storage_prefix, SESSION_PREFIX, &session_key);
-        kv_write_json(&kv_session_key, session);
+        kv_write_json(&kv_session_key, session)?;
 
         let mut res = DaHttpResponse::new(303, &format!("{}/callback", path_prefix));
 
@@ -360,5 +367,5 @@ pub extern "C" fn handle(Json(req): Json<DaHttpRequest>) -> FnResult<Json<DaHttp
         DaHttpResponse::new(404, "Not found")
     };
 
-    Ok(Json(res))
+    Ok(res)
 }
