@@ -111,5 +111,14 @@
         <span>Log in with Obligator</span>
       </button>
     </form>
+
+    <form action='{{prefix}}/login' method='POST'>
+      <input type='hidden' name='return_target' value='{{return_target}}' />
+      <input type='hidden' name='type' value='fediverse' />
+      <button class='formbutton' type='submit'>
+        <span>Log in with Fediverse Handle</span>
+      </button>
+    </form>
+
   </body>
 </html>

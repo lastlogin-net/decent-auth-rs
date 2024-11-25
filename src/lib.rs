@@ -57,6 +57,7 @@ fn kv_write_json<T: Serialize>(key: &str, value: T) -> error::Result<()> {
 }
 
 const INDEX_TMPL: &str = include_str!("../templates/index.html");
+const LOGIN_FEDIVERSE_TMPL: &str = include_str!("../templates/login_fediverse.html");
 
 #[derive(Serialize)]
 struct IndexTmplData {
@@ -296,7 +297,6 @@ fn handle(req: DaHttpRequest, storage_prefix: &str, path_prefix: &str) -> error:
         let body = template.render_to_string(&data)?;
 
         let mut res = DaHttpResponse::new(200, &body);
-
         res.headers = BTreeMap::from([
             ("Content-Type".to_string(), vec!["text/html".to_string()]),
         ]);
@@ -319,6 +319,21 @@ fn handle(req: DaHttpRequest, storage_prefix: &str, path_prefix: &str) -> error:
                         return Ok(DaHttpResponse::new(400, "Missing OIDC provider"));
                     }
                 },
+                "fediverse" => {
+
+                    if let Some(fediverse_handle) = params.get("handle") {
+                        if fediverse_handle == "" {
+                            return Ok(DaHttpResponse::new(400, &format!("Invalid Fediverse handle {fediverse_handle}")));
+                        }
+                    }
+                    else {
+                        let mut res = DaHttpResponse::new(303, "");
+                        res.headers = BTreeMap::from([
+                            ("Location".to_string(), vec![format!("{}/login-fediverse", path_prefix)]),
+                        ]);
+                        return Ok(res);
+                    }
+                },
                 &_ => {
                     return Ok(DaHttpResponse::new(400, "Invalid login type"))
                 },
@@ -330,6 +345,23 @@ fn handle(req: DaHttpRequest, storage_prefix: &str, path_prefix: &str) -> error:
         }
 
         DaHttpResponse::new(200, "")
+    }
+    else if path == format!("{}/login-fediverse", path_prefix) {
+
+        let template = mustache::compile_str(LOGIN_FEDIVERSE_TMPL)?;
+        let data = IndexTmplData{ 
+            session: session.ok(),
+            prefix: path_prefix.to_string(),
+            return_target: get_return_target(&req),
+        };
+        let body = template.render_to_string(&data)?;
+
+        let mut res = DaHttpResponse::new(200, &body);
+        res.headers = BTreeMap::from([
+            ("Content-Type".to_string(), vec!["text/html".to_string()]),
+        ]);
+
+        res
     }
     else if path == format!("{}/callback", path_prefix) {
 
@@ -438,7 +470,7 @@ fn login_oidc(req: &DaHttpRequest, storage_prefix: &str, path_prefix: &str, prov
     let mut res = DaHttpResponse::new(303, "Hi there");
 
     res.headers = BTreeMap::from([
-        ("Location".to_string(), vec![format!("{}", auth_url).to_string()]),
+        ("Location".to_string(), vec![format!("{}", auth_url)]),
     ]);
 
     Ok(res)
