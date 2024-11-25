@@ -1,4 +1,4 @@
-use extism_pdk::{plugin_fn,host_fn,FnResult,Json,http};
+use extism_pdk::{debug,plugin_fn,host_fn,FnResult,Json,http};
 use serde::{Serialize,Deserialize};
 use url::{Url};
 use std::collections::{HashMap,BTreeMap};
@@ -43,7 +43,7 @@ const OAUTH_STATE_PREFIX: &str = "oauth_state";
 fn kv_read_json<T: std::fmt::Debug + for<'a> Deserialize<'a>>(key: &str) -> error::Result<T> {
     let bytes = unsafe { kv_read(key)? };
     if bytes[0] != 65 {
-        return Err(Box::new(DaError{}));
+        return Err(Box::new(DaError::new("kv_read bad code")));
     }
     let s = std::str::from_utf8(&bytes[1..])?;
     Ok(serde_json::from_str::<T>(s)?)
@@ -107,25 +107,34 @@ impl ExtismHttpClient {
 
 #[derive(Debug,Deserialize)]
 struct DaError {
+    msg: String
+}
+
+impl DaError {
+    fn new(msg: &str) -> Self {
+        Self{
+            msg: msg.to_string(),
+        }
+    }
 }
 
 impl std::error::Error for DaError {}
 
 impl fmt::Display for DaError {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        write!(f, "DaError")
+        write!(f, "DaError: {}", self.msg)
     }
 }
 
 impl From<cookie::ParseError> for DaError {
     fn from(_value: cookie::ParseError) -> Self {
-        Self{}
+        Self::new("cookie::ParseError")
     }
 }
 
 impl From<extism_pdk::Error> for DaError {
     fn from(_value: extism_pdk::Error) -> Self {
-        Self{}
+        Self::new("extism_pdk::Error")
     }
 }
 
@@ -180,7 +189,7 @@ struct Session {
 
 fn get_session(req: &DaHttpRequest, prefix: &str) -> error::Result<Session> {
 
-    let header_val = req.headers.get("Cookie").ok_or(DaError{})?;
+    let header_val = req.headers.get("Cookie").ok_or(DaError::new("Failed to get Cookie header"))?;
 
     let mut session_key_opt: Option<String> = None;
 
@@ -191,7 +200,7 @@ fn get_session(req: &DaHttpRequest, prefix: &str) -> error::Result<Session> {
         }
     }
 
-    let session_key = session_key_opt.ok_or(DaError{})?;
+    let session_key = session_key_opt.ok_or(DaError::new("No session in cookie"))?;
     let session: Session = kv_read_json(&session_key)?;
 
     Ok(session)
@@ -264,7 +273,13 @@ fn handle(req: DaHttpRequest, storage_prefix: &str, path_prefix: &str) -> error:
         };
         let body = template.render_to_string(&data)?;
 
-        DaHttpResponse::new(200, &body)
+        let mut res = DaHttpResponse::new(200, &body);
+
+        res.headers = BTreeMap::from([
+            ("Content-Type".to_string(), vec!["text/html".to_string()]),
+        ]);
+
+        res
     }
     else if path == format!("{}/lastlogin", path_prefix) {
 
@@ -309,7 +324,10 @@ fn handle(req: DaHttpRequest, storage_prefix: &str, path_prefix: &str) -> error:
         let state = hash_query["state"].clone();
 
         let state_key = format!("/{}/{}/{}", storage_prefix, OAUTH_STATE_PREFIX, state);
+        //debug!("state_key: {:?}", state_key);
         let flow_state: FlowState = kv_read_json(&state_key)?;
+
+        //debug!("flow_state: {:?}", flow_state);
 
         let code = hash_query["code"].clone();
 
