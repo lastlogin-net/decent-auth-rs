@@ -95,6 +95,7 @@ struct FlowState {
     pkce_verifier: String,
     nonce: String,
     return_target: String,
+    provider_uri: String,
 }
 
 pub struct ExtismHttpClient {
@@ -162,9 +163,9 @@ fn requester(req: HttpRequest) -> std::result::Result<HttpResponse, DaError> {
     Ok(res)
 }
 
-fn get_client(path_prefix: &str, parsed_url: &Url) -> CoreClient {
+fn get_client(provider_url: &str, path_prefix: &str, parsed_url: &Url) -> CoreClient {
     let provider_metadata = CoreProviderMetadata::discover(
-        &IssuerUrl::new("https://lastlogin.net".to_string()).unwrap(),
+        &IssuerUrl::new(provider_url.to_string()).unwrap(),
         requester,
     ).expect("meta failed");
 
@@ -232,6 +233,26 @@ fn get_return_target(req: &DaHttpRequest) -> String {
     default
 }
 
+// TODO: overwrite body params with query params
+fn parse_params(req: &DaHttpRequest) -> Option<HashMap<String, String>> {
+
+    if let Ok(parsed_url) = Url::parse(&req.url) {
+        let hash_query: HashMap<_, _> = parsed_url.query_pairs().into_owned().collect();
+        if hash_query.len() > 0 {
+            return Some(hash_query)
+        }
+    }
+
+    if let Ok(parsed_body) = Url::parse(&format!("http://example.com/?{}", &req.body)) {
+        let hash_query: HashMap<_, _> = parsed_body.query_pairs().into_owned().collect();
+        if hash_query.len() > 0 {
+            return Some(hash_query)
+        }
+    }
+
+    None
+}
+
 
 #[plugin_fn]
 pub extern "C" fn extism_handle(Json(req): Json<DaHttpRequest>) -> FnResult<Json<DaHttpResponse>> {
@@ -282,45 +303,37 @@ fn handle(req: DaHttpRequest, storage_prefix: &str, path_prefix: &str) -> error:
 
         res
     }
-    else if path == format!("{}/lastlogin", path_prefix) {
+    else if path == format!("{}/login", path_prefix) {
+        let params = parse_params(&req).unwrap_or(HashMap::new());
 
-        let client = get_client(&path_prefix, &parsed_url);
+        let login_type = params.get("type");
 
-        let (pkce_challenge, pkce_verifier) = PkceCodeChallenge::new_random_sha256();
+        if let Some(login_type) = login_type {
+            match login_type.as_str() {
+                "oidc" => {
+                    let oidc_provider = params.get("oidc_provider");
+                    if let Some(oidc_provider) = oidc_provider {
+                        return login_oidc(&req, &storage_prefix, &path_prefix, &oidc_provider);
+                    }
+                    else {
+                        return Ok(DaHttpResponse::new(400, "Missing OIDC provider"));
+                    }
+                },
+                &_ => {
+                    return Ok(DaHttpResponse::new(400, "Invalid login type"))
+                },
+            }
+        }
+        else {
+            debug!("here2");
+            // do discovery
+        }
 
-        let (auth_url, csrf_token, nonce) = client
-            .authorize_url(
-                CoreAuthenticationFlow::AuthorizationCode,
-                CsrfToken::new_random,
-                Nonce::new_random,
-            )
-            .add_scope(Scope::new("email".to_string()))
-            .add_scope(Scope::new("profile".to_string()))
-            .set_pkce_challenge(pkce_challenge)
-            .url();
-
-        let flow_state = FlowState{
-            pkce_verifier: pkce_verifier.secret().to_string(),
-            nonce: nonce.secret().to_string(),
-            return_target: get_return_target(&req),
-        };
-
-        let state_key = format!("/{}/{}/{}", storage_prefix, OAUTH_STATE_PREFIX, csrf_token.secret());
-        kv_write_json(&state_key, flow_state)?;
-
-        let mut res = DaHttpResponse::new(303, "Hi there");
-
-        res.headers = BTreeMap::from([
-            ("Location".to_string(), vec![format!("{}", auth_url).to_string()]),
-        ]);
-
-        res
+        DaHttpResponse::new(200, "")
     }
     else if path == format!("{}/callback", path_prefix) {
 
         let hash_query: HashMap<_, _> = parsed_url.query_pairs().into_owned().collect();
-
-        let client = get_client(&path_prefix, &parsed_url);
 
         let state = hash_query["state"].clone();
 
@@ -331,6 +344,8 @@ fn handle(req: DaHttpRequest, storage_prefix: &str, path_prefix: &str) -> error:
         //debug!("flow_state: {:?}", flow_state);
 
         let code = hash_query["code"].clone();
+
+        let client = get_client(&flow_state.provider_uri, &path_prefix, &parsed_url);
 
         let token_response =
             client
@@ -387,6 +402,44 @@ fn handle(req: DaHttpRequest, storage_prefix: &str, path_prefix: &str) -> error:
     else {
         DaHttpResponse::new(404, "Not found")
     };
+
+    Ok(res)
+}
+
+fn login_oidc(req: &DaHttpRequest, storage_prefix: &str, path_prefix: &str, provider_uri: &str) -> error::Result<DaHttpResponse> {
+
+    let parsed_url = Url::parse(&req.url)?; 
+
+    let client = get_client(provider_uri, &path_prefix, &parsed_url);
+
+    let (pkce_challenge, pkce_verifier) = PkceCodeChallenge::new_random_sha256();
+
+    let (auth_url, csrf_token, nonce) = client
+        .authorize_url(
+            CoreAuthenticationFlow::AuthorizationCode,
+            CsrfToken::new_random,
+            Nonce::new_random,
+        )
+        .add_scope(Scope::new("email".to_string()))
+        .add_scope(Scope::new("profile".to_string()))
+        .set_pkce_challenge(pkce_challenge)
+        .url();
+
+    let flow_state = FlowState{
+        pkce_verifier: pkce_verifier.secret().to_string(),
+        nonce: nonce.secret().to_string(),
+        return_target: get_return_target(&req),
+        provider_uri: provider_uri.to_string(),
+    };
+
+    let state_key = format!("/{}/{}/{}", storage_prefix, OAUTH_STATE_PREFIX, csrf_token.secret());
+    kv_write_json(&state_key, flow_state)?;
+
+    let mut res = DaHttpResponse::new(303, "Hi there");
+
+    res.headers = BTreeMap::from([
+        ("Location".to_string(), vec![format!("{}", auth_url).to_string()]),
+    ]);
 
     Ok(res)
 }
