@@ -39,10 +39,11 @@ extern "ExtismHost" {
 
 const SESSION_PREFIX: &str = "sessions";
 const OAUTH_STATE_PREFIX: &str = "oauth_state";
+const ERROR_CODE_NO_ERROR: u8 = 0;
 
 fn kv_read_json<T: std::fmt::Debug + for<'a> Deserialize<'a>>(key: &str) -> error::Result<T> {
     let bytes = unsafe { kv_read(key)? };
-    if bytes[0] != 65 {
+    if bytes[0] != ERROR_CODE_NO_ERROR {
         return Err(Box::new(DaError::new("kv_read bad code")));
     }
     let s = std::str::from_utf8(&bytes[1..])?;
