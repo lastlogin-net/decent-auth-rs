@@ -236,8 +236,8 @@ fn get_return_target(req: &DaHttpRequest) -> String {
 #[plugin_fn]
 pub extern "C" fn extism_handle(Json(req): Json<DaHttpRequest>) -> FnResult<Json<DaHttpResponse>> {
 
-    let storage_prefix = extism_pdk::config::get("storage_prefix")?.unwrap_or("".to_string());
-    let path_prefix = extism_pdk::config::get("path_prefix")?.unwrap_or("".to_string());
+    let storage_prefix = extism_pdk::config::get("storage_prefix")?.unwrap_or("decent_auth".to_string());
+    let path_prefix = extism_pdk::config::get("path_prefix")?.unwrap_or("decent_auth".to_string());
 
     let result = handle(req, &storage_prefix, &path_prefix);
 
