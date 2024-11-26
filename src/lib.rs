@@ -8,10 +8,12 @@ use openidconnect::{
     RedirectUrl,ClientId,IssuerUrl,HttpRequest,HttpResponse,PkceCodeChallenge,
     Scope,Nonce,CsrfToken,PkceCodeVerifier,AuthorizationCode, TokenResponse,
     core::{CoreClient,CoreProviderMetadata,CoreAuthenticationFlow},
-    http::{HeaderMap,StatusCode},
+    http::{HeaderMap,StatusCode,method::Method},
 };
 
 mod error;
+mod fediverse;
+mod webfinger;
 
 //struct KvReadResult {
 //    code: u32,
@@ -141,7 +143,7 @@ impl From<extism_pdk::Error> for DaError {
     }
 }
 
-fn requester(req: HttpRequest) -> std::result::Result<HttpResponse, DaError> {
+fn http_request(req: HttpRequest) -> std::result::Result<HttpResponse, DaError> {
 
     let mut ereq = extism_pdk::HttpRequest{
         url: req.url.to_string(),
@@ -167,7 +169,7 @@ fn requester(req: HttpRequest) -> std::result::Result<HttpResponse, DaError> {
 fn get_client(provider_url: &str, path_prefix: &str, parsed_url: &Url) -> CoreClient {
     let provider_metadata = CoreProviderMetadata::discover(
         &IssuerUrl::new(provider_url.to_string()).unwrap(),
-        requester,
+        http_request,
     ).expect("meta failed");
 
     let host = parsed_url.host().unwrap();
@@ -234,8 +236,10 @@ fn get_return_target(req: &DaHttpRequest) -> String {
     default
 }
 
+type Params = HashMap<String, String>;
+
 // TODO: overwrite body params with query params
-fn parse_params(req: &DaHttpRequest) -> Option<HashMap<String, String>> {
+fn parse_params(req: &DaHttpRequest) -> Option<Params> {
 
     if let Ok(parsed_url) = Url::parse(&req.url) {
         let hash_query: HashMap<_, _> = parsed_url.query_pairs().into_owned().collect();
@@ -320,19 +324,7 @@ fn handle(req: DaHttpRequest, storage_prefix: &str, path_prefix: &str) -> error:
                     }
                 },
                 "fediverse" => {
-
-                    if let Some(fediverse_handle) = params.get("handle") {
-                        if fediverse_handle == "" {
-                            return Ok(DaHttpResponse::new(400, &format!("Invalid Fediverse handle {fediverse_handle}")));
-                        }
-                    }
-                    else {
-                        let mut res = DaHttpResponse::new(303, "");
-                        res.headers = BTreeMap::from([
-                            ("Location".to_string(), vec![format!("{}/login-fediverse", path_prefix)]),
-                        ]);
-                        return Ok(res);
-                    }
+                    return fediverse::handle_login(&params, &path_prefix);
                 },
                 &_ => {
                     return Ok(DaHttpResponse::new(400, "Invalid login type"))
@@ -383,7 +375,7 @@ fn handle(req: DaHttpRequest, storage_prefix: &str, path_prefix: &str) -> error:
             client
                 .exchange_code(AuthorizationCode::new(code))
                 .set_pkce_verifier(PkceCodeVerifier::new(flow_state.pkce_verifier))
-                .request(requester)?;
+                .request(http_request)?;
 
         let id_token = token_response.id_token().unwrap();
 
