@@ -1,78 +1,13 @@
-<!doctype html>
-<html>
-  <head>
-    <meta charset="utf-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1" />
+{{{header}}}
 
-    <style>
+<h1>Fediverse Login</h1>
 
-      *, *::before, *::after {
-        box-sizing: border-box;
-      }
+<form action='{{prefix}}/login' method='POST'>
+  <input type='hidden' name='type' value='fediverse' />
+  <input type='text' name='handle' placeholder='Fediverse handle' />
+  <button class='formbutton' type='submit'>
+    Log in with Fediverse Handle
+  </button>
+</form>
 
-      :root {
-        --text-color: #222;
-        --background-color: #eee;
-        --border: 2px solid var(--text-color);
-      }
-
-      @media (prefers-color-scheme: dark) {
-        :root {
-          --text-color: #eee;
-          --background-color: #222;
-        }
-      }
-
-      body {
-        font-family: Arial;
-        font-size: 1.2em;
-        color: var(--text-color);
-        background: var(--background-color);
-        margin: 0 auto;
-        max-width: 640px;
-        height: 100vh;
-        padding: 15px;
-        border-left: var(--border);
-        border-right: var(--border);
-      }
-
-      .formbutton {
-        display: flex;
-        justify-content: center;
-        align-items: center;
-        gap: 10px;
-        font-size: 16px;
-        width: 100%;
-        padding: 12px 32px;
-        background: var(--background-color);
-        border: 1px solid var(--text-color);
-        border-radius: 5px;
-        cursor: pointer;
-        color: var(--text-color);
-        -webkit-text-fill-color: var(--text-color); 
-      }
-      .formbutton:hover {
-        background: var(--text-color);
-        color: var(--background-color);
-        -webkit-text-fill-color: var(--background-color); 
-      }
-      .formbutton svg {
-        width: 20px;
-        height: 20px;
-      }
-
-    </style>
-  </head>
-  <body>
-    <h1>Fediverse Login</h1>
-
-    <form action='{{prefix}}/login' method='POST'>
-      <input type='hidden' name='type' value='fediverse' />
-      <input type='text' name='handle' placeholder='Fediverse handle' />
-      <button class='formbutton' type='submit'>
-        Log in with Fediverse Handle
-      </button>
-    </form>
-
-  </body>
-</html>
+{{{footer}}}

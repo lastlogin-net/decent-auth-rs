@@ -58,11 +58,15 @@ fn kv_write_json<T: Serialize>(key: &str, value: T) -> error::Result<()> {
     Ok(())
 }
 
+const HEADER_TMPL: &str = include_str!("../templates/header.html");
+const FOOTER_TMPL: &str = include_str!("../templates/footer.html");
 const INDEX_TMPL: &str = include_str!("../templates/index.html");
 const LOGIN_FEDIVERSE_TMPL: &str = include_str!("../templates/login_fediverse.html");
 
 #[derive(Serialize)]
 struct IndexTmplData {
+    header: &'static str,
+    footer: &'static str,
     session: Option<Session>,
     prefix: String,
     return_target: String,
@@ -294,6 +298,8 @@ fn handle(req: DaHttpRequest, storage_prefix: &str, path_prefix: &str) -> error:
 
         let template = mustache::compile_str(INDEX_TMPL)?;
         let data = IndexTmplData{ 
+            header: HEADER_TMPL,
+            footer: FOOTER_TMPL,
             session: session.ok(),
             prefix: path_prefix.to_string(),
             return_target: get_return_target(&req),
@@ -342,6 +348,8 @@ fn handle(req: DaHttpRequest, storage_prefix: &str, path_prefix: &str) -> error:
 
         let template = mustache::compile_str(LOGIN_FEDIVERSE_TMPL)?;
         let data = IndexTmplData{ 
+            header: HEADER_TMPL,
+            footer: FOOTER_TMPL,
             session: session.ok(),
             prefix: path_prefix.to_string(),
             return_target: get_return_target(&req),
