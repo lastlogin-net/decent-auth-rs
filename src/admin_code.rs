@@ -1,8 +1,12 @@
 use std::collections::{BTreeMap};
 use crate::{error,Params,DaHttpResponse};
-use crate::{debug,info,kv_read_json,kv_write_json,CsrfToken,SESSION_PREFIX,Session,Cookie};
+use crate::{
+    debug,info,kv_read_json,kv_write_json,CsrfToken,SESSION_PREFIX,Session,
+    Cookie,get_return_target,HEADER_TMPL,FOOTER_TMPL,LOGIN_ADMIN_CODE_TMPL,
+    CommonTemplateData,get_session,DaHttpRequest
+};
 
-pub fn handle_login(params: &Params, path_prefix: &str, storage_prefix: &str, admin_id: Option<String>) -> error::Result<DaHttpResponse> {
+pub fn handle_login(req: &DaHttpRequest, params: &Params, path_prefix: &str, storage_prefix: &str, admin_id: Option<String>) -> error::Result<DaHttpResponse> {
 
     let admin_id = if let Some(admin_id) = admin_id {
         admin_id
@@ -35,8 +39,10 @@ pub fn handle_login(params: &Params, path_prefix: &str, storage_prefix: &str, ad
 
         let mut res = DaHttpResponse::new(303, &format!("{}/callback", path_prefix));
 
+        let return_target = get_return_target(&req);
+
         res.headers = BTreeMap::from([
-            ("Location".to_string(), vec!["/".to_string()]),
+            ("Location".to_string(), vec![return_target]),
             ("Set-Cookie".to_string(), vec![session_cookie.to_string()])
         ]);
 
@@ -50,10 +56,23 @@ pub fn handle_login(params: &Params, path_prefix: &str, storage_prefix: &str, ad
 
         info!("Admin login code: {}", new_code);
 
-        let mut res = DaHttpResponse::new(303, "");
+        let session = get_session(&req, &storage_prefix);
+
+        let template = mustache::compile_str(LOGIN_ADMIN_CODE_TMPL)?;
+        let data = CommonTemplateData{ 
+            header: HEADER_TMPL,
+            footer: FOOTER_TMPL,
+            session: session.ok(),
+            prefix: path_prefix.to_string(),
+            return_target: get_return_target(&req),
+        };
+        let body = template.render_to_string(&data)?;
+
+        let mut res = DaHttpResponse::new(200, &body);
         res.headers = BTreeMap::from([
-            ("Location".to_string(), vec![format!("{}/login-admin-code", path_prefix)]),
+            ("Content-Type".to_string(), vec!["text/html".to_string()]),
         ]);
+
         return Ok(res);
     }
 }

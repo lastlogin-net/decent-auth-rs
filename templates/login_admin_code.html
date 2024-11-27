@@ -3,6 +3,7 @@
 <h1>Admin Code Login</h1>
 
 <form action='{{prefix}}/login' method='POST'>
+  <input type='hidden' name='return_target' value='{{return_target}}' />
   <input type='hidden' name='type' value='admin-code' />
   <input type='password' name='code' placeholder='Admin code' />
   <button class='formbutton' type='submit'>

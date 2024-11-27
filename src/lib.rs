@@ -333,7 +333,7 @@ fn handle(req: DaHttpRequest, storage_prefix: &str, path_prefix: &str, admin_id:
                     }
                 },
                 "admin-code" => {
-                    return admin_code::handle_login(&params, &path_prefix, &storage_prefix, admin_id);
+                    return admin_code::handle_login(&req, &params, &path_prefix, &storage_prefix, admin_id);
                 },
                 "fediverse" => {
                     return fediverse::handle_login(&params, &path_prefix);
@@ -349,25 +349,6 @@ fn handle(req: DaHttpRequest, storage_prefix: &str, path_prefix: &str, admin_id:
         }
 
         DaHttpResponse::new(200, "")
-    }
-    else if path == format!("{}/login-admin-code", path_prefix) {
-
-        let template = mustache::compile_str(LOGIN_ADMIN_CODE_TMPL)?;
-        let data = CommonTemplateData{ 
-            header: HEADER_TMPL,
-            footer: FOOTER_TMPL,
-            session: session.ok(),
-            prefix: path_prefix.to_string(),
-            return_target: get_return_target(&req),
-        };
-        let body = template.render_to_string(&data)?;
-
-        let mut res = DaHttpResponse::new(200, &body);
-        res.headers = BTreeMap::from([
-            ("Content-Type".to_string(), vec!["text/html".to_string()]),
-        ]);
-
-        res
     }
     else if path == format!("{}/login-fediverse", path_prefix) {
 
