@@ -1,4 +1,4 @@
-use extism_pdk::{debug,plugin_fn,host_fn,FnResult,Json,http};
+use extism_pdk::{debug,info,plugin_fn,host_fn,FnResult,Json,http};
 use serde::{Serialize,Deserialize};
 use url::{Url};
 use std::collections::{HashMap,BTreeMap};
@@ -12,6 +12,7 @@ use openidconnect::{
 };
 
 mod error;
+mod admin_code;
 mod fediverse;
 mod webfinger;
 
@@ -61,10 +62,11 @@ fn kv_write_json<T: Serialize>(key: &str, value: T) -> error::Result<()> {
 const HEADER_TMPL: &str = include_str!("../templates/header.html");
 const FOOTER_TMPL: &str = include_str!("../templates/footer.html");
 const INDEX_TMPL: &str = include_str!("../templates/index.html");
+const LOGIN_ADMIN_CODE_TMPL: &str = include_str!("../templates/login_admin_code.html");
 const LOGIN_FEDIVERSE_TMPL: &str = include_str!("../templates/login_fediverse.html");
 
 #[derive(Serialize)]
-struct IndexTmplData {
+struct CommonTemplateData{
     header: &'static str,
     footer: &'static str,
     session: Option<Session>,
@@ -268,8 +270,9 @@ pub extern "C" fn extism_handle(Json(req): Json<DaHttpRequest>) -> FnResult<Json
 
     let storage_prefix = extism_pdk::config::get("storage_prefix")?.unwrap_or("decent_auth".to_string());
     let path_prefix = extism_pdk::config::get("path_prefix")?.unwrap_or("decent_auth".to_string());
+    let admin_id = extism_pdk::config::get("admin_id")?;
 
-    let result = handle(req, &storage_prefix, &path_prefix);
+    let result = handle(req, &storage_prefix, &path_prefix, admin_id);
 
     if let Ok(res) = result {
         Ok(Json(res))
@@ -279,7 +282,7 @@ pub extern "C" fn extism_handle(Json(req): Json<DaHttpRequest>) -> FnResult<Json
     }
 }
 
-fn handle(req: DaHttpRequest, storage_prefix: &str, path_prefix: &str) -> error::Result<DaHttpResponse> {
+fn handle(req: DaHttpRequest, storage_prefix: &str, path_prefix: &str, admin_id: Option<String>) -> error::Result<DaHttpResponse> {
 
     let parsed_url = Url::parse(&req.url)?; 
 
@@ -297,7 +300,7 @@ fn handle(req: DaHttpRequest, storage_prefix: &str, path_prefix: &str) -> error:
         //};
 
         let template = mustache::compile_str(INDEX_TMPL)?;
-        let data = IndexTmplData{ 
+        let data = CommonTemplateData{ 
             header: HEADER_TMPL,
             footer: FOOTER_TMPL,
             session: session.ok(),
@@ -329,6 +332,9 @@ fn handle(req: DaHttpRequest, storage_prefix: &str, path_prefix: &str) -> error:
                         return Ok(DaHttpResponse::new(400, "Missing OIDC provider"));
                     }
                 },
+                "admin-code" => {
+                    return admin_code::handle_login(&params, &path_prefix, &storage_prefix, admin_id);
+                },
                 "fediverse" => {
                     return fediverse::handle_login(&params, &path_prefix);
                 },
@@ -338,16 +344,35 @@ fn handle(req: DaHttpRequest, storage_prefix: &str, path_prefix: &str) -> error:
             }
         }
         else {
-            debug!("here2");
+            debug!("TODO: do discovery");
             // do discovery
         }
 
         DaHttpResponse::new(200, "")
     }
+    else if path == format!("{}/login-admin-code", path_prefix) {
+
+        let template = mustache::compile_str(LOGIN_ADMIN_CODE_TMPL)?;
+        let data = CommonTemplateData{ 
+            header: HEADER_TMPL,
+            footer: FOOTER_TMPL,
+            session: session.ok(),
+            prefix: path_prefix.to_string(),
+            return_target: get_return_target(&req),
+        };
+        let body = template.render_to_string(&data)?;
+
+        let mut res = DaHttpResponse::new(200, &body);
+        res.headers = BTreeMap::from([
+            ("Content-Type".to_string(), vec!["text/html".to_string()]),
+        ]);
+
+        res
+    }
     else if path == format!("{}/login-fediverse", path_prefix) {
 
         let template = mustache::compile_str(LOGIN_FEDIVERSE_TMPL)?;
-        let data = IndexTmplData{ 
+        let data = CommonTemplateData{ 
             header: HEADER_TMPL,
             footer: FOOTER_TMPL,
             session: session.ok(),
@@ -404,7 +429,7 @@ fn handle(req: DaHttpRequest, storage_prefix: &str, path_prefix: &str) -> error:
         let kv_session_key = format!("/{}/{}/{}", storage_prefix, SESSION_PREFIX, &session_key);
         kv_write_json(&kv_session_key, session)?;
 
-        let mut res = DaHttpResponse::new(303, &format!("{}/callback", path_prefix));
+        let mut res = DaHttpResponse::new(303, "");
 
         res.headers = BTreeMap::from([
             ("Location".to_string(), vec![flow_state.return_target]),
