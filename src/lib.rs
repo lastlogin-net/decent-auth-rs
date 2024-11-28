@@ -40,6 +40,14 @@ extern "ExtismHost" {
     fn kv_delete(key: &str); 
 }
 
+#[derive(Debug,Serialize,Deserialize)]
+struct Config {
+    storage_prefix: String,
+    path_prefix: String,
+    admin_id: Option<String>,
+    id_header_name: Option<String>,
+}
+
 const SESSION_PREFIX: &str = "sessions";
 const OAUTH_STATE_PREFIX: &str = "oauth_state";
 const ERROR_CODE_NO_ERROR: u8 = 0;
@@ -198,23 +206,38 @@ struct Session {
     id_type: String,
 }
 
-fn get_session(req: &DaHttpRequest, prefix: &str) -> error::Result<Session> {
+fn get_session(req: &DaHttpRequest, config: &Config) -> Option<Session> {
 
-    let header_val = req.headers.get("Cookie").ok_or(DaError::new("Failed to get Cookie header"))?;
-
-    let mut session_key_opt: Option<String> = None;
-
-    for cook in Cookie::split_parse(&header_val[0]) {
-        if cook.clone()?.name() == format!("{}_session_key", prefix) {
-            session_key_opt = Some(format!("/{}/{}/{}", prefix, SESSION_PREFIX, cook?.value().to_string()));
-            break;
+    if let Some(id_header_name) = &config.id_header_name {
+        if let Some(ids) = req.headers.get(&id_header_name.to_lowercase()) {
+            return Some(Session{
+                id: ids[0].clone(),
+                id_type: "email".to_string(),
+            });
         }
     }
 
-    let session_key = session_key_opt.ok_or(DaError::new("No session in cookie"))?;
-    let session: Session = kv_read_json(&session_key)?;
+    if let Some(header_val) = req.headers.get("cookie") {
 
-    Ok(session)
+        let mut session_key_opt: Option<String> = None;
+
+        for cook in Cookie::split_parse(&header_val[0]) {
+            if let Ok(cook) = cook.clone() {
+                if cook.name() == format!("{}_session_key", config.storage_prefix) {
+                    session_key_opt = Some(format!("/{}/{}/{}", config.storage_prefix, SESSION_PREFIX, cook.value().to_string()));
+                    break;
+                }
+            }
+        }
+
+        if let Some(session_key) = session_key_opt {
+            if let Ok(session) = kv_read_json(&session_key) {
+                return Some(session);
+            }
+        }
+    } 
+
+    None
 }
 
 fn get_return_target(req: &DaHttpRequest) -> String {
@@ -264,15 +287,29 @@ fn parse_params(req: &DaHttpRequest) -> Option<Params> {
     None
 }
 
+fn get_config() -> error::Result<Config> {
+    let storage_prefix = extism_pdk::config::get("storage_prefix")?.unwrap_or("decent_auth".to_string());
+    let path_prefix = extism_pdk::config::get("path_prefix")?.unwrap_or("decent_auth".to_string());
+    let admin_id = extism_pdk::config::get("admin_id")?;
+    let id_header_name = extism_pdk::config::get("id_header_name")?;
+
+    let config = Config{
+        storage_prefix,
+        path_prefix,
+        admin_id,
+        id_header_name,
+    };
+
+    Ok(config)
+}
+
 
 #[plugin_fn]
 pub extern "C" fn extism_handle(Json(req): Json<DaHttpRequest>) -> FnResult<Json<DaHttpResponse>> {
 
-    let storage_prefix = extism_pdk::config::get("storage_prefix")?.unwrap_or("decent_auth".to_string());
-    let path_prefix = extism_pdk::config::get("path_prefix")?.unwrap_or("decent_auth".to_string());
-    let admin_id = extism_pdk::config::get("admin_id")?;
+    let config = get_config().map_err(|_| DaError::new("Failed to get config for handler"))?;
 
-    let result = handle(req, &storage_prefix, &path_prefix, admin_id);
+    let result = handle(req, &config);
 
     if let Ok(res) = result {
         Ok(Json(res))
@@ -282,11 +319,23 @@ pub extern "C" fn extism_handle(Json(req): Json<DaHttpRequest>) -> FnResult<Json
     }
 }
 
-fn handle(req: DaHttpRequest, storage_prefix: &str, path_prefix: &str, admin_id: Option<String>) -> error::Result<DaHttpResponse> {
+#[plugin_fn]
+pub extern "C" fn extism_get_session(Json(req): Json<DaHttpRequest>) -> FnResult<Json<Option<Session>>> {
+    let config = get_config().map_err(|_| DaError::new("Failed to get config for session"))?;
+
+    let session = get_session(&req, &config);
+
+    Ok(Json(session))
+}
+
+fn handle(req: DaHttpRequest, config: &Config) -> error::Result<DaHttpResponse> {
+
+    let path_prefix = &config.path_prefix;
+    let storage_prefix = &config.storage_prefix;
 
     let parsed_url = Url::parse(&req.url)?; 
 
-    let session = get_session(&req, &storage_prefix);
+    let session = get_session(&req, config);
 
     let path = parsed_url.path();
 
@@ -303,7 +352,7 @@ fn handle(req: DaHttpRequest, storage_prefix: &str, path_prefix: &str, admin_id:
         let data = CommonTemplateData{ 
             header: HEADER_TMPL,
             footer: FOOTER_TMPL,
-            session: session.ok(),
+            session,
             prefix: path_prefix.to_string(),
             return_target: get_return_target(&req),
         };
@@ -333,7 +382,7 @@ fn handle(req: DaHttpRequest, storage_prefix: &str, path_prefix: &str, admin_id:
                     }
                 },
                 "admin-code" => {
-                    return admin_code::handle_login(&req, &params, &path_prefix, &storage_prefix, admin_id);
+                    return admin_code::handle_login(&req, &params, config);
                 },
                 "fediverse" => {
                     return fediverse::handle_login(&params, &path_prefix);
@@ -356,7 +405,7 @@ fn handle(req: DaHttpRequest, storage_prefix: &str, path_prefix: &str, admin_id:
         let data = CommonTemplateData{ 
             header: HEADER_TMPL,
             footer: FOOTER_TMPL,
-            session: session.ok(),
+            session,
             prefix: path_prefix.to_string(),
             return_target: get_return_target(&req),
         };
