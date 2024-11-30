@@ -10,11 +10,13 @@ use openidconnect::{
     core::{CoreClient,CoreProviderMetadata,CoreAuthenticationFlow},
     http::{HeaderMap,StatusCode,method::Method},
 };
+use crate::kv::Store;
 
+pub mod webfinger;
 mod error;
 mod admin_code;
 mod fediverse;
-pub mod webfinger;
+mod kv;
 
 //struct KvReadResult {
 //    code: u32,
@@ -46,6 +48,52 @@ struct Config {
     path_prefix: String,
     admin_id: Option<String>,
     id_header_name: Option<String>,
+}
+
+
+impl From<extism_pdk::Error> for kv::Error {
+    fn from(_value: extism_pdk::Error) -> Self {
+        Self::new("extism_pdk::Error")
+    }
+}
+
+
+struct ExtismKv {
+}
+
+impl kv::Store for ExtismKv {
+    fn get(&self, key: &str) -> Result<Vec<u8>, kv::Error> {
+        let bytes = unsafe { kv_read(key)? };
+        if bytes[0] != ERROR_CODE_NO_ERROR {
+            return Err(kv::Error::new("kv_read bad code"));
+        }
+        Ok((&bytes[1..]).to_vec())
+    }
+    
+    fn set(&self, key: &str, value: Vec<u8>) -> Result<(), kv::Error> {
+        unsafe { kv_write(key, value)? };
+        Ok(())
+    }
+
+    fn delete(&self, key: &str) -> Result<(), kv::Error> {
+        Err(kv::Error::new("Not implemented"))
+    }
+}
+
+struct KvStore<T: kv::Store> {
+    byte_kv: T,
+}
+
+impl<T: kv::Store> KvStore<T> {
+    fn get<U: for<'a> Deserialize<'a>>(&self, key: &str) -> U {
+        let bytes = self.byte_kv.get(key).unwrap();
+        serde_json::from_slice(&bytes).unwrap()
+    }
+
+    fn set<U: Serialize>(&self, key: &str, value: U) {
+        let bytes = serde_json::to_vec(&value).unwrap();
+        self.byte_kv.set(key, bytes);
+    }
 }
 
 const SESSION_PREFIX: &str = "sessions";
@@ -339,6 +387,10 @@ fn handle(req: DaHttpRequest, config: &Config) -> error::Result<DaHttpResponse> 
 
     let path = parsed_url.path();
 
+    let kv_store = KvStore{
+        byte_kv: ExtismKv{},
+    };
+
     let res = if path == path_prefix {
 
         //let name = if let Ok(session) = session {
@@ -426,7 +478,7 @@ fn handle(req: DaHttpRequest, config: &Config) -> error::Result<DaHttpResponse> 
 
         let state_key = format!("/{}/{}/{}", storage_prefix, OAUTH_STATE_PREFIX, state);
         //debug!("state_key: {:?}", state_key);
-        let flow_state: FlowState = kv_read_json(&state_key)?;
+        let flow_state: FlowState = kv_store.get(&state_key);
 
         //debug!("flow_state: {:?}", flow_state);
 
@@ -457,7 +509,7 @@ fn handle(req: DaHttpRequest, config: &Config) -> error::Result<DaHttpResponse> 
         };
 
         let kv_session_key = format!("/{}/{}/{}", storage_prefix, SESSION_PREFIX, &session_key);
-        kv_write_json(&kv_session_key, session)?;
+        kv_store.set(&kv_session_key, &session);
 
         let mut res = DaHttpResponse::new(303, "");
 
