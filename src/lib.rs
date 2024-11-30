@@ -16,23 +16,6 @@ mod oidc;
 mod fediverse;
 mod kv;
 
-//struct KvReadResult {
-//    code: u32,
-//    data: Vec<u8>,
-//}
-//
-//impl extism_pdk::FromBytesOwned for KvReadResult {
-//    fn from_bytes_owned(data: &[u8]) -> Result<Self, extism_pdk::Error> {
-//
-//        let res = KvReadResult{
-//            code: 0,
-//            data: Vec::new(),
-//        };
-//
-//        Ok(res)
-//    }
-//}
-
 #[host_fn]
 extern "ExtismHost" {
     fn kv_read(key: &str) -> Vec<u8>; 
@@ -365,13 +348,6 @@ fn handle(req: DaHttpRequest, config: &Config) -> error::Result<DaHttpResponse> 
     let path = parsed_url.path();
 
     let res = if path == path_prefix {
-
-        //let name = if let Ok(session) = session {
-        //    session.id
-        //}
-        //else {
-        //    "Anonymous".to_string()
-        //};
 
         let template = mustache::compile_str(INDEX_TMPL)?;
         let data = CommonTemplateData{ 
