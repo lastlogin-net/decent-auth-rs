@@ -5,15 +5,15 @@ use std::collections::{HashMap,BTreeMap};
 use std::{fmt};
 use cookie::{Cookie,time::Duration};
 use openidconnect::{
-    RedirectUrl,ClientId,IssuerUrl,HttpRequest,HttpResponse,PkceCodeChallenge,
-    Scope,Nonce,CsrfToken,PkceCodeVerifier,AuthorizationCode, TokenResponse,
-    core::{CoreClient,CoreProviderMetadata,CoreAuthenticationFlow},
+    RedirectUrl,ClientId,IssuerUrl,HttpRequest,HttpResponse,CsrfToken,
+    core::{CoreClient,CoreProviderMetadata},
     http::{HeaderMap,StatusCode,method::Method},
 };
 
 pub mod webfinger;
 mod error;
 mod admin_code;
+mod oidc;
 mod fediverse;
 mod kv;
 
@@ -151,13 +151,7 @@ impl DaHttpResponse {
     }
 }
 
-#[derive(Debug,Serialize,Deserialize)]
-struct FlowState {
-    pkce_verifier: String,
-    nonce: String,
-    return_target: String,
-    provider_uri: String,
-}
+
 
 pub struct ExtismHttpClient {
 }
@@ -427,7 +421,7 @@ fn handle(req: DaHttpRequest, config: &Config) -> error::Result<DaHttpResponse> 
                 "oidc" => {
                     let oidc_provider = params.get("oidc_provider");
                     if let Some(oidc_provider) = oidc_provider {
-                        return login_oidc(&req, &kv_store, &storage_prefix, &path_prefix, &oidc_provider);
+                        return oidc::handle_login(&req, &kv_store, &storage_prefix, &path_prefix, &oidc_provider);
                     }
                     else {
                         return Ok(DaHttpResponse::new(400, "Missing OIDC provider"));
@@ -471,51 +465,7 @@ fn handle(req: DaHttpRequest, config: &Config) -> error::Result<DaHttpResponse> 
         res
     }
     else if path == format!("{}/callback", path_prefix) {
-
-        let hash_query: HashMap<_, _> = parsed_url.query_pairs().into_owned().collect();
-
-        let state = hash_query["state"].clone();
-
-        let state_key = format!("/{}/{}/{}", storage_prefix, OAUTH_STATE_PREFIX, state);
-        let flow_state: FlowState = kv_store.get(&state_key)?;
-
-        let code = hash_query["code"].clone();
-
-        let client = get_client(&flow_state.provider_uri, &path_prefix, &parsed_url);
-
-        let token_response =
-            client
-                .exchange_code(AuthorizationCode::new(code))
-                .set_pkce_verifier(PkceCodeVerifier::new(flow_state.pkce_verifier))
-                .request(http_request)?;
-
-        let id_token = token_response.id_token().unwrap();
-
-        let nonce = Nonce::new(flow_state.nonce);
-        let claims = id_token.claims(&client.id_token_verifier(), &nonce)?;
-
-        let session_key = CsrfToken::new_random().secret().to_string();
-        let session_cookie = Cookie::build((format!("{}_session_key", storage_prefix), &session_key))
-            .path("/")
-            .secure(true)
-            .http_only(true);
-
-        let session = Session{
-            id_type: "email".to_string(),
-            id: claims.subject().to_string(),
-        };
-
-        let kv_session_key = format!("/{}/{}/{}", storage_prefix, SESSION_PREFIX, &session_key);
-        kv_store.set(&kv_session_key, &session)?;
-
-        let mut res = DaHttpResponse::new(303, "");
-
-        res.headers = BTreeMap::from([
-            ("Location".to_string(), vec![flow_state.return_target]),
-            ("Set-Cookie".to_string(), vec![session_cookie.to_string()])
-        ]);
-
-        res
+        oidc::handle_callback(&req, &kv_store, &config)?
     }
     else if path == format!("{}/logout", path_prefix) {
 
@@ -538,44 +488,6 @@ fn handle(req: DaHttpRequest, config: &Config) -> error::Result<DaHttpResponse> 
     else {
         DaHttpResponse::new(404, "Not found")
     };
-
-    Ok(res)
-}
-
-fn login_oidc<T: kv::Store>(req: &DaHttpRequest, kv_store: &KvStore<T>, storage_prefix: &str, path_prefix: &str, provider_uri: &str) -> error::Result<DaHttpResponse> {
-
-    let parsed_url = Url::parse(&req.url)?; 
-
-    let client = get_client(provider_uri, &path_prefix, &parsed_url);
-
-    let (pkce_challenge, pkce_verifier) = PkceCodeChallenge::new_random_sha256();
-
-    let (auth_url, csrf_token, nonce) = client
-        .authorize_url(
-            CoreAuthenticationFlow::AuthorizationCode,
-            CsrfToken::new_random,
-            Nonce::new_random,
-        )
-        .add_scope(Scope::new("email".to_string()))
-        .add_scope(Scope::new("profile".to_string()))
-        .set_pkce_challenge(pkce_challenge)
-        .url();
-
-    let flow_state = FlowState{
-        pkce_verifier: pkce_verifier.secret().to_string(),
-        nonce: nonce.secret().to_string(),
-        return_target: get_return_target(&req),
-        provider_uri: provider_uri.to_string(),
-    };
-
-    let state_key = format!("/{}/{}/{}", storage_prefix, OAUTH_STATE_PREFIX, csrf_token.secret());
-    kv_store.set(&state_key, flow_state)?;
-
-    let mut res = DaHttpResponse::new(303, "Hi there");
-
-    res.headers = BTreeMap::from([
-        ("Location".to_string(), vec![format!("{}", auth_url)]),
-    ]);
 
     Ok(res)
 }
