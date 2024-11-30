@@ -14,7 +14,7 @@ use openidconnect::{
 mod error;
 mod admin_code;
 mod fediverse;
-mod webfinger;
+pub mod webfinger;
 
 //struct KvReadResult {
 //    code: u32,
