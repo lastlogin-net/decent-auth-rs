@@ -72,6 +72,7 @@ impl kv::Store for ExtismKv {
         if bytes[0] != ERROR_CODE_NO_ERROR {
             return Err(kv::Error::new("kv_read bad code"));
         }
+        // TODO: I think this to_vec results in an extra copy. Can we avoid it?
         Ok((&bytes[1..]).to_vec())
     }
     
@@ -109,21 +110,6 @@ impl<T: kv::Store> KvStore<T> {
 const SESSION_PREFIX: &str = "sessions";
 const OAUTH_STATE_PREFIX: &str = "oauth_state";
 const ERROR_CODE_NO_ERROR: u8 = 0;
-
-fn kv_read_json<T: std::fmt::Debug + for<'a> Deserialize<'a>>(key: &str) -> error::Result<T> {
-    let bytes = unsafe { kv_read(key)? };
-    if bytes[0] != ERROR_CODE_NO_ERROR {
-        return Err(Box::new(DaError::new("kv_read bad code")));
-    }
-    let s = std::str::from_utf8(&bytes[1..])?;
-    Ok(serde_json::from_str::<T>(s)?)
-}
-
-fn kv_write_json<T: Serialize>(key: &str, value: T) -> error::Result<()> {
-    let bytes = serde_json::to_vec(&value)?;
-    unsafe { kv_write(key, bytes)? };
-    Ok(())
-}
 
 const HEADER_TMPL: &str = include_str!("../templates/header.html");
 const FOOTER_TMPL: &str = include_str!("../templates/footer.html");
@@ -264,7 +250,7 @@ struct Session {
     id_type: String,
 }
 
-fn get_session(req: &DaHttpRequest, config: &Config) -> Option<Session> {
+fn get_session<T: kv::Store>(req: &DaHttpRequest, kv_store: &KvStore<T>, config: &Config) -> Option<Session> {
 
     if let Some(id_header_name) = &config.id_header_name {
         if let Some(ids) = req.headers.get(&id_header_name.to_lowercase()) {
@@ -289,7 +275,7 @@ fn get_session(req: &DaHttpRequest, config: &Config) -> Option<Session> {
         }
 
         if let Some(session_key) = session_key_opt {
-            if let Ok(session) = kv_read_json(&session_key) {
+            if let Ok(session) = kv_store.get(&session_key) {
                 return Some(session);
             }
         }
@@ -381,7 +367,11 @@ pub extern "C" fn extism_handle(Json(req): Json<DaHttpRequest>) -> FnResult<Json
 pub extern "C" fn extism_get_session(Json(req): Json<DaHttpRequest>) -> FnResult<Json<Option<Session>>> {
     let config = get_config().map_err(|_| DaError::new("Failed to get config for session"))?;
 
-    let session = get_session(&req, &config);
+    let kv_store = KvStore{
+        byte_kv: ExtismKv{},
+    };
+
+    let session = get_session(&req, &kv_store, &config);
 
     Ok(Json(session))
 }
@@ -393,13 +383,13 @@ fn handle(req: DaHttpRequest, config: &Config) -> error::Result<DaHttpResponse> 
 
     let parsed_url = Url::parse(&req.url)?; 
 
-    let session = get_session(&req, config);
-
-    let path = parsed_url.path();
-
     let kv_store = KvStore{
         byte_kv: ExtismKv{},
     };
+
+    let session = get_session(&req, &kv_store, config);
+
+    let path = parsed_url.path();
 
     let res = if path == path_prefix {
 
@@ -437,14 +427,14 @@ fn handle(req: DaHttpRequest, config: &Config) -> error::Result<DaHttpResponse> 
                 "oidc" => {
                     let oidc_provider = params.get("oidc_provider");
                     if let Some(oidc_provider) = oidc_provider {
-                        return login_oidc(&req, &storage_prefix, &path_prefix, &oidc_provider);
+                        return login_oidc(&req, &kv_store, &storage_prefix, &path_prefix, &oidc_provider);
                     }
                     else {
                         return Ok(DaHttpResponse::new(400, "Missing OIDC provider"));
                     }
                 },
                 "admin-code" => {
-                    return admin_code::handle_login(&req, &params, config);
+                    return admin_code::handle_login(&req, &kv_store, &params, config);
                 },
                 "fediverse" => {
                     return fediverse::handle_login(&params, &path_prefix);
@@ -552,7 +542,7 @@ fn handle(req: DaHttpRequest, config: &Config) -> error::Result<DaHttpResponse> 
     Ok(res)
 }
 
-fn login_oidc(req: &DaHttpRequest, storage_prefix: &str, path_prefix: &str, provider_uri: &str) -> error::Result<DaHttpResponse> {
+fn login_oidc<T: kv::Store>(req: &DaHttpRequest, kv_store: &KvStore<T>, storage_prefix: &str, path_prefix: &str, provider_uri: &str) -> error::Result<DaHttpResponse> {
 
     let parsed_url = Url::parse(&req.url)?; 
 
@@ -579,7 +569,7 @@ fn login_oidc(req: &DaHttpRequest, storage_prefix: &str, path_prefix: &str, prov
     };
 
     let state_key = format!("/{}/{}/{}", storage_prefix, OAUTH_STATE_PREFIX, csrf_token.secret());
-    kv_write_json(&state_key, flow_state)?;
+    kv_store.set(&state_key, flow_state)?;
 
     let mut res = DaHttpResponse::new(303, "Hi there");
 
