@@ -10,7 +10,6 @@ use openidconnect::{
     core::{CoreClient,CoreProviderMetadata,CoreAuthenticationFlow},
     http::{HeaderMap,StatusCode,method::Method},
 };
-use crate::kv::Store;
 
 pub mod webfinger;
 mod error;
@@ -57,6 +56,12 @@ impl From<extism_pdk::Error> for kv::Error {
     }
 }
 
+impl From<serde_json::Error> for kv::Error {
+    fn from(_value: serde_json::Error) -> Self {
+        Self::new("serde_json::Error")
+    }
+}
+
 
 struct ExtismKv {
 }
@@ -75,9 +80,9 @@ impl kv::Store for ExtismKv {
         Ok(())
     }
 
-    fn delete(&self, key: &str) -> Result<(), kv::Error> {
-        Err(kv::Error::new("Not implemented"))
-    }
+    //fn delete(&self, _key: &str) -> Result<(), kv::Error> {
+    //    Err(kv::Error::new("Not implemented"))
+    //}
 }
 
 struct KvStore<T: kv::Store> {
@@ -85,15 +90,20 @@ struct KvStore<T: kv::Store> {
 }
 
 impl<T: kv::Store> KvStore<T> {
-    fn get<U: for<'a> Deserialize<'a>>(&self, key: &str) -> U {
-        let bytes = self.byte_kv.get(key).unwrap();
-        serde_json::from_slice(&bytes).unwrap()
+    fn get<U: for<'a> Deserialize<'a> + std::fmt::Debug>(&self, key: &str) -> Result<U, kv::Error> {
+        let bytes = self.byte_kv.get(key)?;
+        let serde_res = serde_json::from_slice::<U>(&bytes);
+        Ok(serde_res?)
     }
 
-    fn set<U: Serialize>(&self, key: &str, value: U) {
-        let bytes = serde_json::to_vec(&value).unwrap();
-        self.byte_kv.set(key, bytes);
+    fn set<U: Serialize>(&self, key: &str, value: U) -> Result<(), kv::Error> {
+        let bytes = serde_json::to_vec(&value)?;
+        Ok(self.byte_kv.set(key, bytes)?)
     }
+
+    //fn delete(&self, key: &str) -> Result<(), kv::Error> {
+    //    Ok(self.byte_kv.delete(key)?)
+    //}
 }
 
 const SESSION_PREFIX: &str = "sessions";
@@ -477,10 +487,7 @@ fn handle(req: DaHttpRequest, config: &Config) -> error::Result<DaHttpResponse> 
         let state = hash_query["state"].clone();
 
         let state_key = format!("/{}/{}/{}", storage_prefix, OAUTH_STATE_PREFIX, state);
-        //debug!("state_key: {:?}", state_key);
-        let flow_state: FlowState = kv_store.get(&state_key);
-
-        //debug!("flow_state: {:?}", flow_state);
+        let flow_state: FlowState = kv_store.get(&state_key)?;
 
         let code = hash_query["code"].clone();
 
@@ -509,7 +516,7 @@ fn handle(req: DaHttpRequest, config: &Config) -> error::Result<DaHttpResponse> 
         };
 
         let kv_session_key = format!("/{}/{}/{}", storage_prefix, SESSION_PREFIX, &session_key);
-        kv_store.set(&kv_session_key, &session);
+        kv_store.set(&kv_session_key, &session)?;
 
         let mut res = DaHttpResponse::new(303, "");
 
