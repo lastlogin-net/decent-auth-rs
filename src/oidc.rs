@@ -1,11 +1,12 @@
 use std::collections::{HashMap,BTreeMap};
 use crate::{
-    get_return_target,DaHttpResponse,OAUTH_STATE_PREFIX,get_client, KvStore,
+    get_return_target,DaHttpResponse,OAUTH_STATE_PREFIX,KvStore,
     DaHttpRequest,kv,error,SESSION_PREFIX,Session,http_request,Config
 };
 use openidconnect::{
-    Scope,PkceCodeChallenge,core::CoreAuthenticationFlow,Nonce,CsrfToken,
-    TokenResponse,PkceCodeVerifier,AuthorizationCode
+    Scope,PkceCodeChallenge,Nonce,CsrfToken,TokenResponse,PkceCodeVerifier,
+    AuthorizationCode,RedirectUrl,IssuerUrl,ClientId,
+    core::{CoreAuthenticationFlow,CoreClient,CoreProviderMetadata},
 };
 use serde::{Serialize,Deserialize};
 use url::Url;
@@ -105,4 +106,24 @@ pub fn handle_callback<T: kv::Store>(req: &DaHttpRequest, kv_store: &KvStore<T>,
     ]);
 
     Ok(res)
+}
+
+fn get_client(provider_url: &str, path_prefix: &str, parsed_url: &Url) -> CoreClient {
+    let provider_metadata = CoreProviderMetadata::discover(
+        &IssuerUrl::new(provider_url.to_string()).unwrap(),
+        http_request,
+    ).expect("meta failed");
+
+    let host = parsed_url.host().unwrap();
+
+    let uri = format!("https://{host}{path_prefix}/callback");
+    let client =
+        CoreClient::from_provider_metadata(
+            provider_metadata,
+            ClientId::new(format!("https://{host}")),
+            None,
+        )
+        .set_redirect_uri(RedirectUrl::new(uri).unwrap());
+
+    client
 }

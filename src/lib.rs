@@ -5,8 +5,7 @@ use std::collections::{HashMap,BTreeMap};
 use std::{fmt};
 use cookie::{Cookie,time::Duration};
 use openidconnect::{
-    RedirectUrl,ClientId,IssuerUrl,HttpRequest,HttpResponse,CsrfToken,
-    core::{CoreClient,CoreProviderMetadata},
+    HttpRequest,HttpResponse,
     http::{HeaderMap,StatusCode,method::Method},
 };
 
@@ -216,26 +215,6 @@ fn http_request(req: HttpRequest) -> std::result::Result<HttpResponse, DaError> 
     };
 
     Ok(res)
-}
-
-fn get_client(provider_url: &str, path_prefix: &str, parsed_url: &Url) -> CoreClient {
-    let provider_metadata = CoreProviderMetadata::discover(
-        &IssuerUrl::new(provider_url.to_string()).unwrap(),
-        http_request,
-    ).expect("meta failed");
-
-    let host = parsed_url.host().unwrap();
-
-    let uri = format!("https://{host}{path_prefix}/callback");
-    let client =
-        CoreClient::from_provider_metadata(
-            provider_metadata,
-            ClientId::new(format!("https://{host}")),
-            None,
-        )
-        .set_redirect_uri(RedirectUrl::new(uri).unwrap());
-
-    client
 }
 
 #[derive(Debug,Serialize,Deserialize)]
