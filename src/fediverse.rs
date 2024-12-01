@@ -1,9 +1,11 @@
 use std::collections::{HashMap,BTreeMap};
 use crate::{
-    error,DaHttpResponse,debug,http_request,Method,HeaderMap,HeaderValue,
+    error,DaHttpResponse,http_request,Method,HeaderMap,HeaderValue,
     HttpRequest,Url,Serialize,Deserialize,DaError,KvStore,Config,kv,
-    parse_params,DaHttpRequest,
+    parse_params,DaHttpRequest,generate_random_text,Session,SESSION_PREFIX,
+    get_return_target,
 };
+use cookie::{Cookie};
 
 #[derive(Debug,Serialize,Deserialize)]
 struct MastodonApp {
@@ -12,6 +14,25 @@ struct MastodonApp {
     scopes: Vec<String>,
     client_id: String,
     client_secret: String,
+    redirect_uri: String,
+    redirect_uris: Vec<String>,
+}
+
+#[derive(Debug,Serialize,Deserialize)]
+struct PendingAuthRequest {
+    server: String,
+    app: MastodonApp,
+    return_target: String,
+}
+
+#[derive(Debug,Serialize,Deserialize)]
+struct TokenResponse {
+    access_token: String,
+}
+
+#[derive(Debug,Serialize,Deserialize)]
+struct CredentialsResponse {
+    username: String,
 }
 
 pub fn handle_login<T: kv::Store>(req: &DaHttpRequest, kv_store: &KvStore<T>, config: &Config) -> error::Result<DaHttpResponse> {
@@ -43,6 +64,8 @@ pub fn handle_login<T: kv::Store>(req: &DaHttpRequest, kv_store: &KvStore<T>, co
 
         let app_res: Result<MastodonApp, kv::Error> = kv_store.get(&key);
 
+        let redirect_uri = format!("https://{}{}/fediverse-callback", host, config.path_prefix);
+
         let app;
         if let Ok(existing_app) = app_res {
             app = existing_app;
@@ -50,12 +73,11 @@ pub fn handle_login<T: kv::Store>(req: &DaHttpRequest, kv_store: &KvStore<T>, co
         else {
             let client_name = "Decent Auth Client";
             // TODO: probably don't want to hard code this as https
-            let redirect_uris = format!("https://{}{}/fediverse-callback", host, config.path_prefix);
             let scopes = "read:accounts";
 
             let param_str = format!(
                 "client_name={}&redirect_uris={}&scopes={}",
-                client_name, redirect_uris, scopes
+                client_name, redirect_uri, scopes
             );
 
             let url = Url::parse(&format!("https://{}/api/v1/apps", server))?;
@@ -79,7 +101,25 @@ pub fn handle_login<T: kv::Store>(req: &DaHttpRequest, kv_store: &KvStore<T>, co
             app = new_app;
         }
 
-        debug!("app: {:?}", app);
+
+        let state = generate_random_text();
+        let auth_uri = format!("https://{}/oauth/authorize?client_id={}&redirect_uri={}&state={}&response_type=code&scope=read:accounts", server, app.client_id, redirect_uri, state);
+
+        let oauth_state_key = format!("/{}/{}/{}", config.storage_prefix, "oauth_state", state);
+
+        let auth_req = PendingAuthRequest{
+            server: server.to_string(),
+            app,
+            return_target: get_return_target(req),
+        };
+
+        kv_store.set(&oauth_state_key, auth_req)?;
+
+        let mut res = DaHttpResponse::new(303, "");
+        res.headers = BTreeMap::from([
+            ("Location".to_string(), vec![auth_uri]),
+        ]);
+        return Ok(res);
     }
     else {
         let mut res = DaHttpResponse::new(303, "");
@@ -88,8 +128,82 @@ pub fn handle_login<T: kv::Store>(req: &DaHttpRequest, kv_store: &KvStore<T>, co
         ]);
         return Ok(res);
     }
+}
 
-    Ok(DaHttpResponse::new(200, "Hi there"))
+
+pub fn handle_callback<T: kv::Store>(req: &DaHttpRequest, kv_store: &KvStore<T>, config: &Config) -> error::Result<DaHttpResponse> {
+
+    let params = parse_params(&req).unwrap_or(HashMap::new());
+
+    let state = params.get("state").ok_or(DaError::new("Missing state param"))?;
+    let code = params.get("code").ok_or(DaError::new("Missing code param"))?;
+
+    let oauth_state_key = format!("/{}/{}/{}", config.storage_prefix, "oauth_state", state);
+    let auth_req: PendingAuthRequest = kv_store.get(&oauth_state_key)?;
+    let app = &auth_req.app;
+
+    let param_str = format!(
+        "code={}&client_id={}&client_secret={}&redirect_uri={}&grant_type=authorization_code",
+        code, app.client_id, app.client_secret, app.redirect_uri,
+    );
+
+    let url = Url::parse(&format!("https://{}/oauth/token", auth_req.server))?;
+
+    let mut headers = HeaderMap::new();
+    let content_type = HeaderValue::from_static("application/x-www-form-urlencoded");
+    let accept = HeaderValue::from_static("application/json");
+    headers.insert("Content-Type", content_type);
+    headers.insert("Accept", accept);
+
+    let req = HttpRequest{
+        url,
+        method: Method::POST, 
+        headers,
+        body: param_str.as_bytes().to_vec(),
+    };
+    let res = http_request(req)?;
+
+    let token_res: TokenResponse = serde_json::from_slice(&res.body)?;
+
+    let url = Url::parse(&format!("https://{}/api/v1/accounts/verify_credentials", auth_req.server))?;
+
+    let mut headers = HeaderMap::new();
+    let authorization = HeaderValue::from_str(&format!("Bearer {}", token_res.access_token))?;
+    headers.insert("Authorization", authorization);
+
+    let req = HttpRequest{
+        url,
+        method: Method::GET, 
+        headers,
+        body: vec![],
+    };
+    let res = http_request(req)?;
+
+    let cred_res: CredentialsResponse = serde_json::from_slice(&res.body)?;
+
+    let id = format!("@{}@{}", cred_res.username, auth_req.server);
+
+    let session = Session{
+        id_type: "fediverse".to_string(),
+        id,
+    };
+
+    let session_key = generate_random_text();
+    let session_cookie = Cookie::build((format!("{}_session_key", config.storage_prefix), &session_key))
+        .path("/")
+        .secure(true)
+        .http_only(true);
+
+    let kv_session_key = format!("/{}/{}/{}", config.storage_prefix, SESSION_PREFIX, &session_key);
+    kv_store.set(&kv_session_key, &session)?;
+
+    let mut res = DaHttpResponse::new(303, "");
+    res.headers = BTreeMap::from([
+        ("Location".to_string(), vec![auth_req.return_target]),
+        ("Set-Cookie".to_string(), vec![session_cookie.to_string()])
+    ]);
+
+    Ok(res)
 }
 
 #[derive(Debug,Serialize,Deserialize)]

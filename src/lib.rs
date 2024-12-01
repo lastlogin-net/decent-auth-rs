@@ -5,7 +5,7 @@ use std::collections::{HashMap,BTreeMap};
 use std::{fmt};
 use cookie::{Cookie,time::Duration};
 use openidconnect::{
-    HttpRequest,HttpResponse,
+    HttpRequest,HttpResponse,CsrfToken,
     http::{HeaderMap,HeaderValue,StatusCode,method::Method},
 };
 
@@ -419,6 +419,9 @@ fn handle(req: DaHttpRequest, config: &Config) -> error::Result<DaHttpResponse> 
 
         res
     }
+    else if path == format!("{}/fediverse-callback", path_prefix) {
+        fediverse::handle_callback(&req, &kv_store, &config)?
+    }
     else if path == format!("{}/callback", path_prefix) {
         oidc::handle_callback(&req, &kv_store, &config)?
     }
@@ -445,4 +448,8 @@ fn handle(req: DaHttpRequest, config: &Config) -> error::Result<DaHttpResponse> 
     };
 
     Ok(res)
+}
+
+fn generate_random_text() -> String {
+    CsrfToken::new_random().secret().to_string()
 }
