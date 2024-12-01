@@ -6,7 +6,7 @@ use std::{fmt};
 use cookie::{Cookie,time::Duration};
 use openidconnect::{
     HttpRequest,HttpResponse,
-    http::{HeaderMap,StatusCode,method::Method},
+    http::{HeaderMap,HeaderValue,StatusCode,method::Method},
 };
 
 pub mod webfinger;
@@ -386,7 +386,7 @@ fn handle(req: DaHttpRequest, config: &Config) -> error::Result<DaHttpResponse> 
                     return admin_code::handle_login(&req, &kv_store, &params, config);
                 },
                 "fediverse" => {
-                    return fediverse::handle_login(&params, &path_prefix);
+                    return fediverse::handle_login(&req, &kv_store, &config);
                 },
                 &_ => {
                     return Ok(DaHttpResponse::new(400, "Invalid login type"))
