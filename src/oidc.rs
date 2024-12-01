@@ -1,7 +1,7 @@
 use std::collections::{HashMap,BTreeMap};
 use crate::{
     get_return_target,DaHttpResponse,OAUTH_STATE_PREFIX,KvStore,
-    DaHttpRequest,kv,error,SESSION_PREFIX,Session,http_request,Config
+    DaHttpRequest,kv,error,SESSION_PREFIX,Session,http_request,Config,DaError
 };
 use openidconnect::{
     Scope,PkceCodeChallenge,Nonce,CsrfToken,TokenResponse,PkceCodeVerifier,
@@ -24,7 +24,7 @@ pub fn handle_login<T: kv::Store>(req: &DaHttpRequest, kv_store: &KvStore<T>, st
 
     let parsed_url = Url::parse(&req.url)?; 
 
-    let client = get_client(provider_uri, &path_prefix, &parsed_url);
+    let client = get_client(provider_uri, &path_prefix, &parsed_url)?;
 
     let (pkce_challenge, pkce_verifier) = PkceCodeChallenge::new_random_sha256();
 
@@ -71,7 +71,7 @@ pub fn handle_callback<T: kv::Store>(req: &DaHttpRequest, kv_store: &KvStore<T>,
 
     let code = hash_query["code"].clone();
 
-    let client = get_client(&flow_state.provider_uri, &config.path_prefix, &parsed_url);
+    let client = get_client(&flow_state.provider_uri, &config.path_prefix, &parsed_url)?;
 
     let token_response =
         client
@@ -79,7 +79,7 @@ pub fn handle_callback<T: kv::Store>(req: &DaHttpRequest, kv_store: &KvStore<T>,
             .set_pkce_verifier(PkceCodeVerifier::new(flow_state.pkce_verifier))
             .request(http_request)?;
 
-    let id_token = token_response.id_token().unwrap();
+    let id_token = token_response.id_token().ok_or(DaError::new("Missing id_token"))?;
 
     let nonce = Nonce::new(flow_state.nonce);
     let claims = id_token.claims(&client.id_token_verifier(), &nonce)?;
@@ -108,13 +108,13 @@ pub fn handle_callback<T: kv::Store>(req: &DaHttpRequest, kv_store: &KvStore<T>,
     Ok(res)
 }
 
-fn get_client(provider_url: &str, path_prefix: &str, parsed_url: &Url) -> CoreClient {
+fn get_client(provider_url: &str, path_prefix: &str, parsed_url: &Url) -> error::Result<CoreClient> {
     let provider_metadata = CoreProviderMetadata::discover(
-        &IssuerUrl::new(provider_url.to_string()).unwrap(),
+        &IssuerUrl::new(provider_url.to_string())?,
         http_request,
     ).expect("meta failed");
 
-    let host = parsed_url.host().unwrap();
+    let host = parsed_url.host().ok_or(DaError::new("Missing host"))?;
 
     let uri = format!("https://{host}{path_prefix}/callback");
     let client =
@@ -123,7 +123,7 @@ fn get_client(provider_url: &str, path_prefix: &str, parsed_url: &Url) -> CoreCl
             ClientId::new(format!("https://{host}")),
             None,
         )
-        .set_redirect_uri(RedirectUrl::new(uri).unwrap());
+        .set_redirect_uri(RedirectUrl::new(uri)?);
 
-    client
+    Ok(client)
 }

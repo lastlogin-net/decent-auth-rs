@@ -177,6 +177,18 @@ impl From<extism_pdk::Error> for DaError {
     }
 }
 
+impl From<openidconnect::http::status::InvalidStatusCode> for DaError {
+    fn from(_value: openidconnect::http::status::InvalidStatusCode) -> Self {
+        Self::new("http::status::InvalidStatusCode")
+    }
+}
+
+impl From<openidconnect::http::header::ToStrError> for DaError {
+    fn from(_value: openidconnect::http::header::ToStrError) -> Self {
+        Self::new("http::header::ToStrError")
+    }
+}
+
 fn http_request(req: HttpRequest) -> std::result::Result<HttpResponse, DaError> {
 
     let mut ereq = extism_pdk::HttpRequest{
@@ -186,13 +198,13 @@ fn http_request(req: HttpRequest) -> std::result::Result<HttpResponse, DaError> 
     };
 
     for (key, value) in req.headers.iter() {
-        ereq.headers.insert(key.to_string(), value.to_str().unwrap().to_string());
+        ereq.headers.insert(key.to_string(), value.to_str()?.to_string());
     }
 
-    let eres = http::request::<Vec<u8>>(&ereq, Some(req.body)).unwrap();
+    let eres = http::request::<Vec<u8>>(&ereq, Some(req.body))?;
 
     let res = HttpResponse{
-        status_code: StatusCode::from_u16(eres.status_code()).unwrap(),
+        status_code: StatusCode::from_u16(eres.status_code())?,
         body: eres.body(),
         headers: HeaderMap::new(),
     };
