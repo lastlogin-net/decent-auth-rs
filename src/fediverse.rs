@@ -3,7 +3,8 @@ use crate::{
     error,DaHttpResponse,http_request,Method,HeaderMap,HeaderValue,
     HttpRequest,Url,Serialize,Deserialize,DaError,KvStore,Config,kv,
     parse_params,DaHttpRequest,generate_random_text,Session,SESSION_PREFIX,
-    get_return_target,
+    get_return_target,HEADER_TMPL,FOOTER_TMPL,CommonTemplateData,
+    LOGIN_FEDIVERSE_TMPL,get_session,
 };
 use cookie::{Cookie};
 
@@ -122,11 +123,25 @@ pub fn handle_login<T: kv::Store>(req: &DaHttpRequest, kv_store: &KvStore<T>, co
         return Ok(res);
     }
     else {
-        let mut res = DaHttpResponse::new(303, "");
+
+        let session = get_session(&req, &kv_store, config);
+
+        let template = mustache::compile_str(LOGIN_FEDIVERSE_TMPL)?;
+        let data = CommonTemplateData{ 
+            header: HEADER_TMPL,
+            footer: FOOTER_TMPL,
+            session,
+            prefix: config.path_prefix.to_string(),
+            return_target: get_return_target(&req),
+        };
+        let body = template.render_to_string(&data)?;
+
+        let mut res = DaHttpResponse::new(200, &body);
         res.headers = BTreeMap::from([
-            ("Location".to_string(), vec![format!("{}/login-fediverse", config.path_prefix)]),
+            ("Content-Type".to_string(), vec!["text/html".to_string()]),
         ]);
-        return Ok(res);
+
+        Ok(res)
     }
 }
 

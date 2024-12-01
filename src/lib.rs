@@ -400,25 +400,6 @@ fn handle(req: DaHttpRequest, config: &Config) -> error::Result<DaHttpResponse> 
 
         DaHttpResponse::new(200, "")
     }
-    else if path == format!("{}/login-fediverse", path_prefix) {
-
-        let template = mustache::compile_str(LOGIN_FEDIVERSE_TMPL)?;
-        let data = CommonTemplateData{ 
-            header: HEADER_TMPL,
-            footer: FOOTER_TMPL,
-            session,
-            prefix: path_prefix.to_string(),
-            return_target: get_return_target(&req),
-        };
-        let body = template.render_to_string(&data)?;
-
-        let mut res = DaHttpResponse::new(200, &body);
-        res.headers = BTreeMap::from([
-            ("Content-Type".to_string(), vec!["text/html".to_string()]),
-        ]);
-
-        res
-    }
     else if path == format!("{}/fediverse-callback", path_prefix) {
         fediverse::handle_callback(&req, &kv_store, &config)?
     }
