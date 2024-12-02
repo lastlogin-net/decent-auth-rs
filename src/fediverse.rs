@@ -36,7 +36,7 @@ struct CredentialsResponse {
     username: String,
 }
 
-pub fn handle_login<T: kv::Store>(req: &DaHttpRequest, kv_store: &KvStore<T>, config: &Config) -> error::Result<DaHttpResponse> {
+pub fn handle_login<T: kv::Store>(req: &DaHttpRequest, kv_store: &mut KvStore<T>, config: &Config) -> error::Result<DaHttpResponse> {
 
     let parsed_url = Url::parse(&req.url)?; 
     let params = parse_params(&req).unwrap_or(HashMap::new());
@@ -146,7 +146,7 @@ pub fn handle_login<T: kv::Store>(req: &DaHttpRequest, kv_store: &KvStore<T>, co
 }
 
 
-pub fn handle_callback<T: kv::Store>(req: &DaHttpRequest, kv_store: &KvStore<T>, config: &Config) -> error::Result<DaHttpResponse> {
+pub fn handle_callback<T: kv::Store>(req: &DaHttpRequest, kv_store: &mut KvStore<T>, config: &Config) -> error::Result<DaHttpResponse> {
 
     let params = parse_params(&req).unwrap_or(HashMap::new());
 

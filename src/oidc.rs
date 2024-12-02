@@ -1,7 +1,7 @@
 use std::collections::{HashMap,BTreeMap};
 use crate::{
     get_return_target,DaHttpResponse,OAUTH_STATE_PREFIX,KvStore,
-    DaHttpRequest,kv,error,SESSION_PREFIX,Session,http_request,Config,DaError
+    DaHttpRequest,kv,error,SESSION_PREFIX,Session,Config,DaError
 };
 use openidconnect::{
     Scope,PkceCodeChallenge,Nonce,CsrfToken,TokenResponse,PkceCodeVerifier,
@@ -12,6 +12,13 @@ use serde::{Serialize,Deserialize};
 use url::Url;
 use cookie::{Cookie};
 
+
+#[cfg(target_arch = "wasm32")]
+use crate::http_client;
+
+#[cfg(not(target_arch = "wasm32"))]
+use openidconnect::reqwest::http_client;
+
 #[derive(Debug,Serialize,Deserialize)]
 pub struct FlowState {
     pub pkce_verifier: String,
@@ -20,7 +27,7 @@ pub struct FlowState {
     pub provider_uri: String,
 }
 
-pub fn handle_login<T: kv::Store>(req: &DaHttpRequest, kv_store: &KvStore<T>, storage_prefix: &str, path_prefix: &str, provider_uri: &str) -> error::Result<DaHttpResponse> {
+pub fn handle_login<T: kv::Store>(req: &DaHttpRequest, kv_store: &mut KvStore<T>, storage_prefix: &str, path_prefix: &str, provider_uri: &str) -> error::Result<DaHttpResponse> {
 
     let parsed_url = Url::parse(&req.url)?; 
 
@@ -58,7 +65,7 @@ pub fn handle_login<T: kv::Store>(req: &DaHttpRequest, kv_store: &KvStore<T>, st
     Ok(res)
 }
 
-pub fn handle_callback<T: kv::Store>(req: &DaHttpRequest, kv_store: &KvStore<T>, config: &Config) -> error::Result<DaHttpResponse> {
+pub fn handle_callback<T: kv::Store>(req: &DaHttpRequest, kv_store: &mut KvStore<T>, config: &Config) -> error::Result<DaHttpResponse> {
 
     let parsed_url = Url::parse(&req.url)?; 
 
@@ -77,7 +84,7 @@ pub fn handle_callback<T: kv::Store>(req: &DaHttpRequest, kv_store: &KvStore<T>,
         client
             .exchange_code(AuthorizationCode::new(code))
             .set_pkce_verifier(PkceCodeVerifier::new(flow_state.pkce_verifier))
-            .request(http_request)?;
+            .request(http_client)?;
 
     let id_token = token_response.id_token().ok_or(DaError::new("Missing id_token"))?;
 
@@ -111,7 +118,7 @@ pub fn handle_callback<T: kv::Store>(req: &DaHttpRequest, kv_store: &KvStore<T>,
 fn get_client(provider_url: &str, path_prefix: &str, parsed_url: &Url) -> error::Result<CoreClient> {
     let provider_metadata = CoreProviderMetadata::discover(
         &IssuerUrl::new(provider_url.to_string())?,
-        http_request,
+        http_client,
     ).expect("meta failed");
 
     let host = parsed_url.host().ok_or(DaError::new("Missing host"))?;

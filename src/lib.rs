@@ -1,4 +1,4 @@
-use extism_pdk::{debug,info,plugin_fn,host_fn,FnResult,Json,http};
+use extism_pdk::{debug,info,plugin_fn,host_fn,FnResult,Json,http as extism_http};
 use serde::{Serialize,Deserialize};
 use url::{Url};
 use std::collections::{HashMap,BTreeMap};
@@ -8,13 +8,80 @@ use openidconnect::{
     HttpRequest,HttpResponse,CsrfToken,
     http::{HeaderMap,HeaderValue,StatusCode,method::Method},
 };
+pub use http;
 
 pub mod webfinger;
 mod error;
 mod admin_code;
 mod oidc;
 mod fediverse;
-mod kv;
+pub mod kv;
+
+pub struct Server<T: kv::Store> {
+    pub config: Config,
+    kv_store: KvStore<T>,
+}
+
+impl<T: kv::Store> Server<T> {
+    pub fn new(config: Config, kv_store: T) -> Self {
+        Self{
+            config,
+            kv_store: KvStore{
+                byte_kv: kv_store,
+            },
+        }
+    }
+
+    pub fn get_session(&self, in_headers: &http::HeaderMap) -> Option<Session> {
+
+        let mut headers = BTreeMap::new();
+        for (key, value) in in_headers {
+            let val = value.to_str().unwrap().to_string();
+            headers.insert(key.to_string(), vec![val]);
+        }
+
+        let req = DaHttpRequest{
+            url: "".to_string(),
+            method: Some("GET".to_string()),
+            headers,
+            body: "".to_string(),
+        };
+
+        get_session(&req, &self.kv_store, &self.config)
+    }
+
+    pub fn handle(&mut self, req: http::Request<bytes::Bytes>) -> http::Response<bytes::Bytes> {
+
+        let mut host = None;
+        let mut headers = BTreeMap::new();
+        for (key, value) in req.headers() {
+            let val = value.to_str().unwrap().to_string();
+            if key == "host" {
+                host = Some(val.clone());
+            }
+            headers.insert(key.to_string(), vec![val]);
+        }
+
+        let url = format!("http://{}{}", host.unwrap_or_default(), req.uri().path());
+
+        let da_req = DaHttpRequest{
+            url,
+            method: Some(req.method().as_str().to_string()),
+            headers,
+            body: std::str::from_utf8(req.body()).unwrap().to_string(),
+        };
+
+        println!("{:?}", da_req);
+
+        let da_res = handle(da_req, &mut self.kv_store, &self.config).unwrap();
+
+        let res = http::Response::builder()
+            .status(http::StatusCode::from_u16(da_res.code).unwrap())
+            .body(bytes::Bytes::from(da_res.body));
+
+        res.unwrap()
+    }
+}
 
 #[host_fn]
 extern "ExtismHost" {
@@ -24,11 +91,11 @@ extern "ExtismHost" {
 }
 
 #[derive(Debug,Serialize,Deserialize)]
-struct Config {
-    storage_prefix: String,
-    path_prefix: String,
-    admin_id: Option<String>,
-    id_header_name: Option<String>,
+pub struct Config {
+    pub storage_prefix: String,
+    pub path_prefix: String,
+    pub admin_id: Option<String>,
+    pub id_header_name: Option<String>,
 }
 
 
@@ -58,7 +125,7 @@ impl kv::Store for ExtismKv {
         Ok((&bytes[1..]).to_vec())
     }
     
-    fn set(&self, key: &str, value: Vec<u8>) -> Result<(), kv::Error> {
+    fn set(&mut self, key: &str, value: Vec<u8>) -> Result<(), kv::Error> {
         unsafe { kv_write(key, value)? };
         Ok(())
     }
@@ -79,7 +146,7 @@ impl<T: kv::Store> KvStore<T> {
         Ok(serde_res?)
     }
 
-    fn set<U: Serialize>(&self, key: &str, value: U) -> Result<(), kv::Error> {
+    fn set<U: Serialize>(&mut self, key: &str, value: U) -> Result<(), kv::Error> {
         let bytes = serde_json::to_vec(&value)?;
         Ok(self.byte_kv.set(key, bytes)?)
     }
@@ -118,13 +185,13 @@ struct DaHttpRequest {
 
 #[derive(Debug,Serialize)]
 struct DaHttpResponse {
-    pub code: u32,
+    pub code: u16,
     pub headers: BTreeMap<String, Vec<String>>,
     pub body: String,
 }
 
 impl DaHttpResponse {
-    fn new(code: u32, body: &str) -> Self {
+    fn new(code: u16, body: &str) -> Self {
         Self{
             code,
             body: body.to_string(),
@@ -189,6 +256,17 @@ impl From<openidconnect::http::header::ToStrError> for DaError {
     }
 }
 
+#[cfg(target_arch = "wasm32")]
+fn http_client(req: HttpRequest) -> std::result::Result<HttpResponse, DaError> {
+    Err(DaError::new("todo"))
+}
+
+#[cfg(not(target_arch = "wasm32"))]
+fn http_request(req: HttpRequest) -> std::result::Result<HttpResponse, DaError> {
+    Err(DaError::new("todo"))
+}
+
+#[cfg(target_arch = "wasm32")]
 fn http_request(req: HttpRequest) -> std::result::Result<HttpResponse, DaError> {
 
     let mut ereq = extism_pdk::HttpRequest{
@@ -201,7 +279,7 @@ fn http_request(req: HttpRequest) -> std::result::Result<HttpResponse, DaError> 
         ereq.headers.insert(key.to_string(), value.to_str()?.to_string());
     }
 
-    let eres = http::request::<Vec<u8>>(&ereq, Some(req.body))?;
+    let eres = extism_http::request::<Vec<u8>>(&ereq, Some(req.body))?;
 
     let res = HttpResponse{
         status_code: StatusCode::from_u16(eres.status_code())?,
@@ -213,7 +291,7 @@ fn http_request(req: HttpRequest) -> std::result::Result<HttpResponse, DaError> 
 }
 
 #[derive(Debug,Serialize,Deserialize)]
-struct Session {
+pub struct Session {
     id: String,
     id_type: String,
 }
@@ -228,6 +306,8 @@ fn get_session<T: kv::Store>(req: &DaHttpRequest, kv_store: &KvStore<T>, config:
             });
         }
     }
+
+    println!("here");
 
     if let Some(header_val) = req.headers.get("cookie") {
 
@@ -321,7 +401,11 @@ pub extern "C" fn extism_handle(Json(req): Json<DaHttpRequest>) -> FnResult<Json
 
     let config = get_config().map_err(|_| DaError::new("Failed to get config for handler"))?;
 
-    let result = handle(req, &config);
+    let mut kv_store = KvStore{
+        byte_kv: ExtismKv{},
+    };
+
+    let result = handle(req, &mut kv_store, &config);
 
     if let Ok(res) = result {
         Ok(Json(res))
@@ -344,20 +428,20 @@ pub extern "C" fn extism_get_session(Json(req): Json<DaHttpRequest>) -> FnResult
     Ok(Json(session))
 }
 
-fn handle(req: DaHttpRequest, config: &Config) -> error::Result<DaHttpResponse> {
+fn handle<T>(req: DaHttpRequest, kv_store: &mut KvStore<T>, config: &Config) -> error::Result<DaHttpResponse> 
+    where T: kv::Store
+{
 
     let path_prefix = &config.path_prefix;
     let storage_prefix = &config.storage_prefix;
 
     let parsed_url = Url::parse(&req.url)?; 
 
-    let kv_store = KvStore{
-        byte_kv: ExtismKv{},
-    };
-
     let session = get_session(&req, &kv_store, config);
 
     let path = parsed_url.path();
+
+    println!("{}", path);
 
     let res = if path == path_prefix {
 
@@ -388,17 +472,17 @@ fn handle(req: DaHttpRequest, config: &Config) -> error::Result<DaHttpResponse> 
                 "oidc" => {
                     let oidc_provider = params.get("oidc_provider");
                     if let Some(oidc_provider) = oidc_provider {
-                        return oidc::handle_login(&req, &kv_store, &storage_prefix, &path_prefix, &oidc_provider);
+                        return oidc::handle_login(&req, kv_store, &storage_prefix, &path_prefix, &oidc_provider);
                     }
                     else {
                         return Ok(DaHttpResponse::new(400, "Missing OIDC provider"));
                     }
                 },
                 "admin-code" => {
-                    return admin_code::handle_login(&req, &kv_store, &params, config);
+                    return admin_code::handle_login(&req, kv_store, &params, config);
                 },
                 "fediverse" => {
-                    return fediverse::handle_login(&req, &kv_store, &config);
+                    return fediverse::handle_login(&req, kv_store, &config);
                 },
                 &_ => {
                     return Ok(DaHttpResponse::new(400, "Invalid login type"))
@@ -406,17 +490,17 @@ fn handle(req: DaHttpRequest, config: &Config) -> error::Result<DaHttpResponse> 
             }
         }
         else {
-            debug!("TODO: do discovery");
+            //debug!("TODO: do discovery");
             // do discovery
         }
 
         DaHttpResponse::new(200, "")
     }
     else if path == format!("{}/fediverse-callback", path_prefix) {
-        fediverse::handle_callback(&req, &kv_store, &config)?
+        fediverse::handle_callback(&req, kv_store, &config)?
     }
     else if path == format!("{}/callback", path_prefix) {
-        oidc::handle_callback(&req, &kv_store, &config)?
+        oidc::handle_callback(&req, kv_store, &config)?
     }
     else if path == format!("{}/logout", path_prefix) {
 
