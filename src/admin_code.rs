@@ -1,7 +1,7 @@
 use std::collections::{BTreeMap};
 use crate::{error,Params,DaHttpResponse};
 use crate::{
-    info,SESSION_PREFIX,Session,
+    SESSION_PREFIX,Session,
     Cookie,get_return_target,HEADER_TMPL,FOOTER_TMPL,LOGIN_ADMIN_CODE_TMPL,
     CommonTemplateData,get_session,DaHttpRequest,Config,KvStore,
 };
@@ -56,7 +56,6 @@ pub fn handle_login<T: kv::Store>(req: &DaHttpRequest, kv_store: &mut KvStore<T>
         let key = format!("/{}/{}/{}", config.storage_prefix, "pending_admin_codes", new_code);
         kv_store.set(&key, "fake-value")?;
 
-        //info!("Admin login code: {}", new_code);
         println!("Admin login code: {}", new_code);
 
         let session = get_session(&req, kv_store, config);

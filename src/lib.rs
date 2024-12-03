@@ -1,4 +1,4 @@
-use extism_pdk::{debug,info,plugin_fn,host_fn,FnResult,Json,http as extism_http};
+use extism_pdk::{plugin_fn,host_fn,FnResult,Json,http as extism_http};
 use serde::{Serialize,Deserialize};
 use url::{Url};
 use std::collections::{HashMap,BTreeMap};
@@ -70,8 +70,6 @@ impl<T: kv::Store> Server<T> {
             headers,
             body: std::str::from_utf8(req.body()).unwrap().to_string(),
         };
-
-        println!("{:?}", da_req);
 
         let da_res = handle(da_req, &mut self.kv_store, &self.config).unwrap();
 
@@ -256,18 +254,13 @@ impl From<openidconnect::http::header::ToStrError> for DaError {
     }
 }
 
+//#[cfg(target_arch = "wasm32")]
+//fn http_request(req: HttpRequest) -> std::result::Result<HttpResponse, DaError> {
+//    Err(DaError::new("todo"))
+//}
+
 #[cfg(target_arch = "wasm32")]
 fn http_client(req: HttpRequest) -> std::result::Result<HttpResponse, DaError> {
-    Err(DaError::new("todo"))
-}
-
-#[cfg(not(target_arch = "wasm32"))]
-fn http_request(req: HttpRequest) -> std::result::Result<HttpResponse, DaError> {
-    Err(DaError::new("todo"))
-}
-
-#[cfg(target_arch = "wasm32")]
-fn http_request(req: HttpRequest) -> std::result::Result<HttpResponse, DaError> {
 
     let mut ereq = extism_pdk::HttpRequest{
         url: req.url.to_string(),
@@ -306,8 +299,6 @@ fn get_session<T: kv::Store>(req: &DaHttpRequest, kv_store: &KvStore<T>, config:
             });
         }
     }
-
-    println!("here");
 
     if let Some(header_val) = req.headers.get("cookie") {
 
@@ -440,8 +431,6 @@ fn handle<T>(req: DaHttpRequest, kv_store: &mut KvStore<T>, config: &Config) -> 
     let session = get_session(&req, &kv_store, config);
 
     let path = parsed_url.path();
-
-    println!("{}", path);
 
     let res = if path == path_prefix {
 

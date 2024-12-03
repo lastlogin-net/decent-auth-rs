@@ -1,12 +1,17 @@
 use std::collections::{HashMap,BTreeMap};
 use crate::{
-    error,DaHttpResponse,http_request,Method,HeaderMap,HeaderValue,
+    error,DaHttpResponse,Method,HeaderMap,HeaderValue,
     HttpRequest,Url,Serialize,Deserialize,DaError,KvStore,Config,kv,
     parse_params,DaHttpRequest,generate_random_text,Session,SESSION_PREFIX,
     get_return_target,HEADER_TMPL,FOOTER_TMPL,CommonTemplateData,
     LOGIN_FEDIVERSE_TMPL,get_session,
 };
 use cookie::{Cookie};
+
+#[cfg(target_arch = "wasm32")]
+use crate::http_client;
+#[cfg(not(target_arch = "wasm32"))]
+use openidconnect::reqwest::http_client;
 
 #[derive(Debug,Serialize,Deserialize)]
 struct MastodonApp {
@@ -93,7 +98,7 @@ pub fn handle_login<T: kv::Store>(req: &DaHttpRequest, kv_store: &mut KvStore<T>
                 headers,
                 body: param_str.as_bytes().to_vec(),
             };
-            let res = http_request(req)?;
+            let res = http_client(req)?;
 
             let new_app: MastodonApp = serde_json::from_slice(&res.body)?;
 
@@ -176,7 +181,7 @@ pub fn handle_callback<T: kv::Store>(req: &DaHttpRequest, kv_store: &mut KvStore
         headers,
         body: param_str.as_bytes().to_vec(),
     };
-    let res = http_request(req)?;
+    let res = http_client(req)?;
 
     let token_res: TokenResponse = serde_json::from_slice(&res.body)?;
 
@@ -192,7 +197,7 @@ pub fn handle_callback<T: kv::Store>(req: &DaHttpRequest, kv_store: &mut KvStore
         headers,
         body: vec![],
     };
-    let res = http_request(req)?;
+    let res = http_client(req)?;
 
     let cred_res: CredentialsResponse = serde_json::from_slice(&res.body)?;
 
@@ -255,7 +260,7 @@ fn get_node_info(server: &str) -> error::Result<NodeInfo> {
         body: vec![],
     };
 
-    let res = http_request(req)?;
+    let res = http_client(req)?;
 
     let node_info_well_known: NodeInfoWellKnown = serde_json::from_slice(&res.body)?;
 
@@ -277,7 +282,7 @@ fn get_node_info(server: &str) -> error::Result<NodeInfo> {
             body: vec![],
         };
 
-        let res = http_request(req)?;
+        let res = http_client(req)?;
 
         let node_info: NodeInfo = serde_json::from_slice(&res.body)?;
 
