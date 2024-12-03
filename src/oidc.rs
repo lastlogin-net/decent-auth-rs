@@ -114,7 +114,6 @@ pub fn handle_callback<T: kv::Store>(req: &DaHttpRequest, kv_store: &mut KvStore
 }
 
 fn get_client(provider_url: &str, path_prefix: &str, parsed_url: &Url) -> error::Result<CoreClient> {
-    extism_pdk::debug!("{:?}", path_prefix);
     let provider_metadata = CoreProviderMetadata::discover(
         &IssuerUrl::new(provider_url.to_string())?,
         http_client,

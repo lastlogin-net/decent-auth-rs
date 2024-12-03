@@ -1,9 +1,13 @@
 use crate::{
     KvStore,get_session,DaError,Session,handle,DaHttpRequest,DaHttpResponse,
-    Config,error,HeaderMap,StatusCode,HttpRequest,HttpResponse,kv,
-    ERROR_CODE_NO_ERROR,BTreeMap,
+    Config,error,kv,BTreeMap,
+};
+use openidconnect::{
+    HttpRequest,HttpResponse,http::{HeaderMap,StatusCode},
 };
 use extism_pdk::{plugin_fn,host_fn,FnResult,Json,http as extism_http};
+
+const ERROR_CODE_NO_ERROR: u8 = 0;
 
 #[host_fn]
 extern "ExtismHost" {
