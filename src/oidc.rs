@@ -69,18 +69,18 @@ pub fn handle_callback<T: kv::Store>(req: &DaHttpRequest, kv_store: &mut KvStore
 
     let hash_query: HashMap<_, _> = parsed_url.query_pairs().into_owned().collect();
 
-    let state = hash_query["state"].clone();
+    let state = hash_query.get("state").ok_or(DaError::new("Missing state param"))?;
 
     let state_key = format!("/{}/{}/{}", config.storage_prefix, OAUTH_STATE_PREFIX, state);
     let flow_state: FlowState = kv_store.get(&state_key)?;
 
-    let code = hash_query["code"].clone();
+    let code = hash_query.get("code").ok_or(DaError::new("Missing code param"))?;
 
     let client = get_client(&flow_state.provider_uri, &config.path_prefix, &parsed_url)?;
 
     let token_response =
         client
-            .exchange_code(AuthorizationCode::new(code))
+            .exchange_code(AuthorizationCode::new(code.to_string()))
             .set_pkce_verifier(PkceCodeVerifier::new(flow_state.pkce_verifier))
             .request(http_client)?;
 

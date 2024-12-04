@@ -48,7 +48,12 @@ impl<T: kv::Store> Server<T> {
             headers.insert(key.to_string(), vec![val]);
         }
 
-        let url = format!("http://{}{}", host.unwrap_or_default(), req.uri().path());
+        let url = if let Some(query) = req.uri().query() {
+            format!("http://{}{}?{}", host.unwrap_or_default(), req.uri().path(), query)
+        }
+        else {
+            format!("http://{}{}", host.unwrap_or_default(), req.uri().path())
+        };
 
         let da_req = DaHttpRequest{
             url,
@@ -59,9 +64,14 @@ impl<T: kv::Store> Server<T> {
 
         let da_res = handle(da_req, &mut self.kv_store, &self.config).unwrap();
 
-        let res = http::Response::builder()
-            .status(http::StatusCode::from_u16(da_res.code).unwrap())
-            .body(bytes::Bytes::from(da_res.body));
+        let mut res_builder = http::Response::builder()
+            .status(http::StatusCode::from_u16(da_res.code).unwrap());
+
+        for (key, values) in da_res.headers {
+            res_builder = res_builder.header(key, values[0].clone());
+        }
+
+        let res = res_builder.body(bytes::Bytes::from(da_res.body));
 
         res.unwrap()
     }

@@ -17,11 +17,12 @@ struct KvStore {
 
 impl kv::Store for KvStore {
     fn get(&self, key: &str) -> Result<Vec<u8>, kv::Error> {
-        println!("kv get {}", key);
 
-        let val = &self.map.get(key).ok_or(kv::Error::new("Fail"))?;
+        let value = &self.map.get(key).ok_or(kv::Error::new("Fail"))?;
 
-        Ok(vec![])
+        println!("kv get {}, {:?}", key, value);
+
+        Ok(value.to_vec())
     }
 
     fn set(&mut self, key: &str, value: Vec<u8>) -> Result<(), kv::Error> {
@@ -85,22 +86,25 @@ async fn handler(headers: HeaderMap, State(state): State<SharedState>) -> &'stat
 
 #[debug_handler]
 async fn auth_handler(State(state): State<SharedState>, req: Request) -> Response<Body> {
-//async fn auth_handler(State(state): State<SharedState>, req: Request) {
 
     let (parts, body) = req.into_parts();
     let da_body = to_bytes(body, 2*1024*1024).await.unwrap();
 
-    let mut state = state.lock().unwrap();
-
     let da_req = http::Request::from_parts(parts, da_body);
 
-    let da_res = state.auth_server.handle(da_req);
+    let da_res = tokio::task::spawn_blocking(move || {
+        let mut state = state.lock().unwrap();
+        state.auth_server.handle(da_req)
+    }).await.unwrap();
 
-    let res = Response::builder()
-        .status(da_res.status())
-        .body(Body::from(da_res.body().clone())).unwrap();
+    let mut res_builder = Response::builder()
+        .status(da_res.status());
 
-    println!("{:?}", res);
+    for (key, value) in da_res.headers() {
+        res_builder = res_builder.header(key, value);
+    }
+
+    let res = res_builder.body(Body::from(da_res.body().clone())).unwrap();
 
     res
 }
