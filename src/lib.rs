@@ -51,7 +51,7 @@ impl<T: kv::Store> KvStore<T> {
         Ok(serde_res?)
     }
 
-    fn set<U: Serialize>(&mut self, key: &str, value: U) -> Result<(), kv::Error> {
+    fn set<U: Serialize>(&self, key: &str, value: U) -> Result<(), kv::Error> {
         let bytes = serde_json::to_vec(&value)?;
         Ok(self.byte_kv.set(key, bytes)?)
     }
@@ -232,7 +232,7 @@ fn parse_params(req: &DaHttpRequest) -> Option<Params> {
 
 
 
-fn handle<T>(req: DaHttpRequest, kv_store: &mut KvStore<T>, config: &Config) -> error::Result<DaHttpResponse> 
+fn handle<T>(req: DaHttpRequest, kv_store: &KvStore<T>, config: &Config) -> error::Result<DaHttpResponse> 
     where T: kv::Store
 {
 

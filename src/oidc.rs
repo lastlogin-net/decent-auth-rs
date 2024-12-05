@@ -25,7 +25,7 @@ pub struct FlowState {
     pub provider_uri: String,
 }
 
-pub fn handle_login<T: kv::Store>(req: &DaHttpRequest, kv_store: &mut KvStore<T>, storage_prefix: &str, path_prefix: &str, provider_uri: &str) -> error::Result<DaHttpResponse> {
+pub fn handle_login<T: kv::Store>(req: &DaHttpRequest, kv_store: &KvStore<T>, storage_prefix: &str, path_prefix: &str, provider_uri: &str) -> error::Result<DaHttpResponse> {
 
     let parsed_url = Url::parse(&req.url)?; 
 
@@ -63,7 +63,7 @@ pub fn handle_login<T: kv::Store>(req: &DaHttpRequest, kv_store: &mut KvStore<T>
     Ok(res)
 }
 
-pub fn handle_callback<T: kv::Store>(req: &DaHttpRequest, kv_store: &mut KvStore<T>, config: &Config) -> error::Result<DaHttpResponse> {
+pub fn handle_callback<T: kv::Store>(req: &DaHttpRequest, kv_store: &KvStore<T>, config: &Config) -> error::Result<DaHttpResponse> {
 
     let parsed_url = Url::parse(&req.url)?; 
 

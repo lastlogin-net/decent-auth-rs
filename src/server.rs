@@ -36,7 +36,7 @@ impl<T: kv::Store> Server<T> {
         get_session(&req, &self.kv_store, &self.config)
     }
 
-    pub fn handle(&mut self, req: http::Request<bytes::Bytes>) -> http::Response<bytes::Bytes> {
+    pub fn handle(&self, req: http::Request<bytes::Bytes>) -> http::Response<bytes::Bytes> {
 
         let mut host = None;
         let mut headers = BTreeMap::new();
@@ -62,7 +62,7 @@ impl<T: kv::Store> Server<T> {
             body: std::str::from_utf8(req.body()).unwrap().to_string(),
         };
 
-        let da_res = handle(da_req, &mut self.kv_store, &self.config).unwrap();
+        let da_res = handle(da_req, &self.kv_store, &self.config).unwrap();
 
         let mut res_builder = http::Response::builder()
             .status(http::StatusCode::from_u16(da_res.code).unwrap());

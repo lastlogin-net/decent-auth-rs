@@ -41,7 +41,7 @@ impl kv::Store for ExtismKv {
         Ok((&bytes[1..]).to_vec())
     }
     
-    fn set(&mut self, key: &str, value: Vec<u8>) -> Result<(), kv::Error> {
+    fn set(&self, key: &str, value: Vec<u8>) -> Result<(), kv::Error> {
         unsafe { kv_write(key, value)? };
         Ok(())
     }
@@ -97,11 +97,11 @@ pub extern "C" fn extism_handle(Json(req): Json<DaHttpRequest>) -> FnResult<Json
 
     let config = get_config().map_err(|_| DaError::new("Failed to get config for handler"))?;
 
-    let mut kv_store = KvStore{
+    let kv_store = KvStore{
         byte_kv: ExtismKv{},
     };
 
-    let result = handle(req, &mut kv_store, &config);
+    let result = handle(req, &kv_store, &config);
 
     if let Ok(res) = result {
         Ok(Json(res))

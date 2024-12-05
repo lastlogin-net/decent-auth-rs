@@ -12,23 +12,27 @@ use axum_macros::debug_handler;
 use decentauth::{http,kv};
 
 struct KvStore {
-    map: HashMap<String, Vec<u8>>,
+    map: Mutex<HashMap<String, Vec<u8>>>,
 }
 
 impl kv::Store for KvStore {
     fn get(&self, key: &str) -> Result<Vec<u8>, kv::Error> {
 
-        let value = &self.map.get(key).ok_or(kv::Error::new("Fail"))?;
+        let map = self.map.lock().unwrap();
+
+        let value = &map.get(key).ok_or(kv::Error::new("Fail"))?;
 
         println!("kv get {}, {:?}", key, value);
 
         Ok(value.to_vec())
     }
 
-    fn set(&mut self, key: &str, value: Vec<u8>) -> Result<(), kv::Error> {
+    fn set(&self, key: &str, value: Vec<u8>) -> Result<(), kv::Error> {
         println!("kv set {}, {:?}", key, value);
 
-        self.map.insert(key.to_string(), value);
+        let mut map = self.map.lock().unwrap();
+
+        map.insert(key.to_string(), value);
 
         Ok(())
     }
@@ -38,7 +42,7 @@ struct AppState {
     auth_server: decentauth::Server<KvStore>,
 }
 
-type SharedState = Arc<Mutex<AppState>>;
+type SharedState = Arc<AppState>;
 
 #[tokio::main]
 async fn main() {
@@ -53,14 +57,14 @@ async fn main() {
     };
 
     let kv_store = KvStore{
-        map: HashMap::new(),
+        map: Mutex::new(HashMap::new()),
     };
 
     let auth_server = decentauth::Server::new(config, kv_store);
 
-    let state = Arc::new(Mutex::new(AppState{
+    let state = Arc::new(AppState{
         auth_server,
-    }));
+    });
 
     let app = Router::new()
         .route("/", get(handler))
@@ -76,7 +80,6 @@ async fn main() {
 
 async fn handler(headers: HeaderMap, State(state): State<SharedState>) -> &'static str {
 
-    let state = state.lock().unwrap();
     let session = state.auth_server.get_session(&headers);
 
     dbg!(session);
@@ -93,7 +96,6 @@ async fn auth_handler(State(state): State<SharedState>, req: Request) -> Respons
     let da_req = http::Request::from_parts(parts, da_body);
 
     let da_res = tokio::task::spawn_blocking(move || {
-        let mut state = state.lock().unwrap();
         state.auth_server.handle(da_req)
     }).await.unwrap();
 

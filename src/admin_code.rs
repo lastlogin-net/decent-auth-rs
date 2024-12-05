@@ -8,7 +8,7 @@ use crate::{
 use openidconnect::CsrfToken;
 use crate::kv;
 
-pub fn handle_login<T: kv::Store>(req: &DaHttpRequest, kv_store: &mut KvStore<T>, params: &Params, config: &Config) -> error::Result<DaHttpResponse> {
+pub fn handle_login<T: kv::Store>(req: &DaHttpRequest, kv_store: &KvStore<T>, params: &Params, config: &Config) -> error::Result<DaHttpResponse> {
 
     let admin_id = if let Some(admin_id) = &config.admin_id {
         admin_id
