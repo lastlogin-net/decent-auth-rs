@@ -22,13 +22,13 @@ impl kv::Store for KvStore {
 
         let value = &map.get(key).ok_or(kv::Error::new("Fail"))?;
 
-        println!("kv get {}, {:?}", key, value);
+        //println!("kv get {}, {:?}", key, value);
 
         Ok(value.to_vec())
     }
 
     fn set(&self, key: &str, value: Vec<u8>) -> Result<(), kv::Error> {
-        println!("kv set {}, {:?}", key, value);
+        //println!("kv set {}, {:?}", key, value);
 
         let mut map = self.map.lock().unwrap();
 
