@@ -1,11 +1,12 @@
 use crate::{
     KvStore,get_session,DaError,Session,handle,DaHttpRequest,DaHttpResponse,
-    Config,error,kv,BTreeMap,
+    Config,error,kv,BTreeMap,HeaderValue,HeaderName
 };
 use openidconnect::{
     HttpRequest,HttpResponse,http::{HeaderMap,StatusCode},
 };
 use extism_pdk::{plugin_fn,host_fn,FnResult,Json,http as extism_http};
+use std::str::FromStr;
 
 const ERROR_CODE_NO_ERROR: u8 = 0;
 
@@ -66,10 +67,16 @@ pub fn http_client(req: HttpRequest) -> std::result::Result<HttpResponse, DaErro
 
     let eres = extism_http::request::<Vec<u8>>(&ereq, Some(req.body))?;
 
+    let mut headers = HeaderMap::new();
+
+    for (k, v) in eres.headers() {
+        headers.insert(HeaderName::from_str(k).unwrap(), HeaderValue::from_str(v).unwrap());
+    }
+
     let res = HttpResponse{
         status_code: StatusCode::from_u16(eres.status_code())?,
+        headers,
         body: eres.body(),
-        headers: HeaderMap::new(),
     };
 
     Ok(res)

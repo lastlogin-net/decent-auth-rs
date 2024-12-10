@@ -5,7 +5,7 @@ use std::{fmt};
 use cookie::{Cookie,time::Duration};
 use openidconnect::{
     HttpRequest,CsrfToken,
-    http::{HeaderMap,HeaderValue,method::Method},
+    http::{HeaderMap,HeaderName,HeaderValue,method::Method},
 };
 pub use server::Server;
 
@@ -18,6 +18,7 @@ pub mod webfinger;
 mod error;
 mod admin_code;
 mod oidc;
+mod atproto;
 mod fediverse;
 pub mod kv;
 mod server;
@@ -283,6 +284,9 @@ fn handle<T>(req: DaHttpRequest, kv_store: &KvStore<T>, config: &Config) -> erro
                 "admin-code" => {
                     return admin_code::handle_login(&req, kv_store, &params, config);
                 },
+                "atproto" => {
+                    return atproto::handle_login(&req, kv_store, &config);
+                },
                 "fediverse" => {
                     return fediverse::handle_login(&req, kv_store, &config);
                 },
@@ -297,6 +301,12 @@ fn handle<T>(req: DaHttpRequest, kv_store: &KvStore<T>, config: &Config) -> erro
         }
 
         DaHttpResponse::new(200, "")
+    }
+    else if path == format!("{}/atproto-client-metadata.json", path_prefix) {
+        atproto::handle_client_metadata(&req, kv_store, &config)?
+    }
+    else if path == format!("{}/atproto-callback", path_prefix) {
+        atproto::handle_callback(&req, kv_store, &config)?
     }
     else if path == format!("{}/fediverse-callback", path_prefix) {
         fediverse::handle_callback(&req, kv_store, &config)?

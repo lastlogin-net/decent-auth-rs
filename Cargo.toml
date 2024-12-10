@@ -18,6 +18,12 @@ cookie = "0.18.1"
 webfinger = "0.5.1"
 http = "1.1.0"
 bytes = "1.9.0"
+atrium-api = { path = "../atrium/atrium-api" }
+atrium-xrpc = { path = "../atrium/atrium-xrpc" }
+atrium-common = { path = "../atrium/atrium-common" }
+atrium-identity = { path = "../atrium/atrium-oauth/identity" }
+atrium-oauth-client = { path = "../atrium/atrium-oauth/oauth-client", default-features = false }
+tokio = { version = "1.41.1", features = ["rt"] }
 
 [dev-dependencies]
 tokio = { version = "1.41.1", features = ["full"] }
