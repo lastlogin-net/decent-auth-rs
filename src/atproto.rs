@@ -1,6 +1,9 @@
 use std::collections::BTreeMap;
 use std::sync::Arc;
-use crate::{DaHttpRequest,DaHttpResponse,KvStore,Config,error,kv,Url,DaError};
+use crate::{
+    DaHttpRequest,DaHttpResponse,KvStore,Config,error,kv,Url,DaError,
+    parse_params,
+};
 
 use atrium_xrpc::HttpClient;
 use atrium_identity::did::{CommonDidResolver, CommonDidResolverConfig, DEFAULT_PLC_DIRECTORY_URL};
@@ -9,7 +12,7 @@ use atrium_oauth_client::store::{SimpleStore,state::{StateStore,InternalStateDat
 use atrium_oauth_client::{
     AuthorizeOptions, KnownScope, OAuthClient,
     OAuthClientConfig, OAuthResolverConfig, Scope, GrantType, AuthMethod,
-    AtprotoClientMetadata, OAuthClientMetadata,
+    AtprotoClientMetadata, OAuthClientMetadata,CallbackParams,
 };
 
 pub fn handle_login<T>(req: &DaHttpRequest, kv_store: &KvStore<T>, config: &Config) -> error::Result<DaHttpResponse> 
@@ -91,7 +94,68 @@ where T: kv::Store,
     Ok(res)
 }
 
-pub fn handle_callback<T: kv::Store>(_req: &DaHttpRequest, _kv_store: &KvStore<T>, _config: &Config) -> error::Result<DaHttpResponse> {
+pub fn handle_callback<T: kv::Store>(req: &DaHttpRequest, kv_store: &KvStore<T>, config: &Config) -> error::Result<DaHttpResponse> {
+
+    let parsed_url = Url::parse(&req.url)?; 
+    let host = parsed_url.host().ok_or(DaError::new("Failed to parse host"))?;
+    let params = parse_params(&req).unwrap();
+
+    let callback_params = CallbackParams{
+        code: params.get("code").unwrap().to_string(),
+        iss: Some(params.get("iss").unwrap().to_string()),
+        state: Some(params.get("state").unwrap().to_string()),
+    };
+
+    let shared_http_client = Arc::new(AtHttpClient::default());
+    let http_client = AtHttpClient::default();
+
+    let root_uri = format!("https://{}", host);
+    let meta_uri = format!("{}{}/atproto-client-metadata.json", root_uri, config.path_prefix);
+    let redirect_uri = format!("{}{}/atproto-callback", root_uri, config.path_prefix);
+
+    let client_metadata = AtprotoClientMetadata {
+        client_id: meta_uri,
+        client_uri: root_uri,
+        redirect_uris: vec![redirect_uri],
+        token_endpoint_auth_method: AuthMethod::None,
+        grant_types: vec![GrantType::AuthorizationCode],
+        scopes: vec![Scope::Known(KnownScope::Atproto)],
+        jwks_uri: None,
+        token_endpoint_auth_signing_alg: None,
+    };
+
+    let state_store = AtKvStore{
+        kv_store,
+    };
+
+    let config = OAuthClientConfig {
+        client_metadata,
+        keys: None,
+        resolver: OAuthResolverConfig {
+            did_resolver: CommonDidResolver::new(CommonDidResolverConfig {
+                plc_directory_url: DEFAULT_PLC_DIRECTORY_URL.to_string(),
+                http_client: shared_http_client.clone(),
+            }),
+            handle_resolver: AtprotoHandleResolver::new(AtprotoHandleResolverConfig {
+                dns_txt_resolver: AtDnsTxtResolver{},
+                http_client: shared_http_client.clone(),
+            }),
+            authorization_server_metadata: Default::default(),
+            protected_resource_metadata: Default::default(),
+        },
+        state_store,
+        http_client,
+    };
+
+    let client_res = OAuthClient::new(config);
+    let client = client_res?;
+
+    let rt = tokio::runtime::Builder::new_current_thread().build().unwrap();
+    rt.block_on(async {
+        let res = client.callback(callback_params).await.unwrap();
+        println!("{}", serde_json::to_string_pretty(&res).unwrap());
+    });
+
     Ok(DaHttpResponse::new(200, "Hi there"))
 }
 
@@ -202,7 +266,8 @@ where
     type Error = DaError;
 
     async fn get(&self, key: &String) -> Result<Option<InternalStateData>, Self::Error> {
-        self.kv_store.get(key).unwrap()
+        let res = self.kv_store.get(key);
+        Ok(Some(res.unwrap()))
     }
 
     async fn set(&self, key: String, value: InternalStateData) -> Result<(), Self::Error> {
