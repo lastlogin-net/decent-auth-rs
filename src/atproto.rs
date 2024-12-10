@@ -5,14 +5,16 @@ use crate::{DaHttpRequest,DaHttpResponse,KvStore,Config,error,kv,Url,DaError};
 use atrium_xrpc::HttpClient;
 use atrium_identity::did::{CommonDidResolver, CommonDidResolverConfig, DEFAULT_PLC_DIRECTORY_URL};
 use atrium_identity::handle::{AtprotoHandleResolver, AtprotoHandleResolverConfig, DnsTxtResolver};
-use atrium_oauth_client::store::state::MemoryStateStore;
+use atrium_oauth_client::store::{SimpleStore,state::{StateStore,InternalStateData}};
 use atrium_oauth_client::{
     AuthorizeOptions, KnownScope, OAuthClient,
     OAuthClientConfig, OAuthResolverConfig, Scope, GrantType, AuthMethod,
     AtprotoClientMetadata, OAuthClientMetadata,
 };
 
-pub fn handle_login<T: kv::Store>(req: &DaHttpRequest, _kv_store: &KvStore<T>, config: &Config) -> error::Result<DaHttpResponse> {
+pub fn handle_login<T>(req: &DaHttpRequest, kv_store: &KvStore<T>, config: &Config) -> error::Result<DaHttpResponse> 
+where T: kv::Store,
+{
 
     let parsed_url = Url::parse(&req.url)?; 
     let host = parsed_url.host().ok_or(DaError::new("Failed to parse host"))?;
@@ -37,6 +39,10 @@ pub fn handle_login<T: kv::Store>(req: &DaHttpRequest, _kv_store: &KvStore<T>, c
         token_endpoint_auth_signing_alg: None,
     };
 
+    let state_store = AtKvStore{
+        kv_store,
+    };
+
     let config = OAuthClientConfig {
         client_metadata,
         keys: None,
@@ -52,8 +58,7 @@ pub fn handle_login<T: kv::Store>(req: &DaHttpRequest, _kv_store: &KvStore<T>, c
             authorization_server_metadata: Default::default(),
             protected_resource_metadata: Default::default(),
         },
-        // TODO: use kv_store
-        state_store: MemoryStateStore::default(),
+        state_store,
         http_client,
     };
 
@@ -177,5 +182,40 @@ impl HttpClient for AtHttpClient {
 impl Default for AtHttpClient {
     fn default() -> Self {
         Self {}
+    }
+}
+
+struct AtKvStore<'a, T: kv::Store> {
+    kv_store: &'a KvStore<T>,
+}
+
+impl<T> StateStore for AtKvStore<'_, T>
+where
+    T: kv::Store,
+{
+}
+
+impl<T> SimpleStore<String, InternalStateData> for AtKvStore<'_, T>
+where
+    T: kv::Store,
+{
+    type Error = DaError;
+
+    async fn get(&self, key: &String) -> Result<Option<InternalStateData>, Self::Error> {
+        self.kv_store.get(key).unwrap()
+    }
+
+    async fn set(&self, key: String, value: InternalStateData) -> Result<(), Self::Error> {
+        Ok(self.kv_store.set(&key, value).unwrap())
+    }
+
+    async fn del(&self, _key: &String) -> Result<(), Self::Error> {
+        // currently no op
+        Ok(())
+    }
+
+    async fn clear(&self) -> Result<(), Self::Error> {
+        // currently no op
+        Ok(())
     }
 }

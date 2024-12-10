@@ -106,7 +106,7 @@ impl DaHttpResponse {
 }
 
 #[derive(Debug,Deserialize)]
-struct DaError {
+pub struct DaError {
     msg: String
 }
 
