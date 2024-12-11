@@ -15,58 +15,14 @@ use atrium_oauth_client::{
     AtprotoClientMetadata, OAuthClientMetadata,CallbackParams,
 };
 
+type DaOAuthClient<'a, T> = OAuthClient<AtKvStore<'a, T>,CommonDidResolver<AtHttpClient>,AtprotoHandleResolver<AtDnsTxtResolver,AtHttpClient>,AtHttpClient>;
+
 pub fn handle_login<T>(req: &DaHttpRequest, kv_store: &KvStore<T>, config: &Config) -> error::Result<DaHttpResponse> 
 where T: kv::Store,
 {
+    let rt = get_async_runtime();
 
-    let parsed_url = Url::parse(&req.url)?; 
-    let host = parsed_url.host().ok_or(DaError::new("Failed to parse host"))?;
-
-    let rt = tokio::runtime::Builder::new_current_thread().build().unwrap();
-
-    let shared_http_client = Arc::new(AtHttpClient::default());
-    let http_client = AtHttpClient::default();
-
-    let root_uri = format!("https://{}", host);
-    let meta_uri = format!("{}{}/atproto-client-metadata.json", root_uri, config.path_prefix);
-    let redirect_uri = format!("{}{}/atproto-callback", root_uri, config.path_prefix);
-
-    let client_metadata = AtprotoClientMetadata {
-        client_id: meta_uri,
-        client_uri: root_uri,
-        redirect_uris: vec![redirect_uri],
-        token_endpoint_auth_method: AuthMethod::None,
-        grant_types: vec![GrantType::AuthorizationCode],
-        scopes: vec![Scope::Known(KnownScope::Atproto)],
-        jwks_uri: None,
-        token_endpoint_auth_signing_alg: None,
-    };
-
-    let state_store = AtKvStore{
-        kv_store,
-    };
-
-    let config = OAuthClientConfig {
-        client_metadata,
-        keys: None,
-        resolver: OAuthResolverConfig {
-            did_resolver: CommonDidResolver::new(CommonDidResolverConfig {
-                plc_directory_url: DEFAULT_PLC_DIRECTORY_URL.to_string(),
-                http_client: shared_http_client.clone(),
-            }),
-            handle_resolver: AtprotoHandleResolver::new(AtprotoHandleResolverConfig {
-                dns_txt_resolver: AtDnsTxtResolver{},
-                http_client: shared_http_client.clone(),
-            }),
-            authorization_server_metadata: Default::default(),
-            protected_resource_metadata: Default::default(),
-        },
-        state_store,
-        http_client,
-    };
-
-    let client_res = OAuthClient::new(config);
-    let client = client_res?;
+    let client = get_client(req, kv_store, config);
 
     let redir_url = rt.block_on(async {
 
@@ -96,8 +52,6 @@ where T: kv::Store,
 
 pub fn handle_callback<T: kv::Store>(req: &DaHttpRequest, kv_store: &KvStore<T>, config: &Config) -> error::Result<DaHttpResponse> {
 
-    let parsed_url = Url::parse(&req.url)?; 
-    let host = parsed_url.host().ok_or(DaError::new("Failed to parse host"))?;
     let params = parse_params(&req).unwrap();
 
     let callback_params = CallbackParams{
@@ -106,51 +60,9 @@ pub fn handle_callback<T: kv::Store>(req: &DaHttpRequest, kv_store: &KvStore<T>,
         state: Some(params.get("state").unwrap().to_string()),
     };
 
-    let shared_http_client = Arc::new(AtHttpClient::default());
-    let http_client = AtHttpClient::default();
+    let client = get_client(req, kv_store, config);
 
-    let root_uri = format!("https://{}", host);
-    let meta_uri = format!("{}{}/atproto-client-metadata.json", root_uri, config.path_prefix);
-    let redirect_uri = format!("{}{}/atproto-callback", root_uri, config.path_prefix);
-
-    let client_metadata = AtprotoClientMetadata {
-        client_id: meta_uri,
-        client_uri: root_uri,
-        redirect_uris: vec![redirect_uri],
-        token_endpoint_auth_method: AuthMethod::None,
-        grant_types: vec![GrantType::AuthorizationCode],
-        scopes: vec![Scope::Known(KnownScope::Atproto)],
-        jwks_uri: None,
-        token_endpoint_auth_signing_alg: None,
-    };
-
-    let state_store = AtKvStore{
-        kv_store,
-    };
-
-    let config = OAuthClientConfig {
-        client_metadata,
-        keys: None,
-        resolver: OAuthResolverConfig {
-            did_resolver: CommonDidResolver::new(CommonDidResolverConfig {
-                plc_directory_url: DEFAULT_PLC_DIRECTORY_URL.to_string(),
-                http_client: shared_http_client.clone(),
-            }),
-            handle_resolver: AtprotoHandleResolver::new(AtprotoHandleResolverConfig {
-                dns_txt_resolver: AtDnsTxtResolver{},
-                http_client: shared_http_client.clone(),
-            }),
-            authorization_server_metadata: Default::default(),
-            protected_resource_metadata: Default::default(),
-        },
-        state_store,
-        http_client,
-    };
-
-    let client_res = OAuthClient::new(config);
-    let client = client_res?;
-
-    let rt = tokio::runtime::Builder::new_current_thread().build().unwrap();
+    let rt = get_async_runtime();
     rt.block_on(async {
         let res = client.callback(callback_params).await.unwrap();
         println!("{}", serde_json::to_string_pretty(&res).unwrap());
@@ -204,9 +116,42 @@ impl DnsTxtResolver for AtDnsTxtResolver {
     }
 }
 
+
+#[cfg(not(target_arch = "wasm32"))]
+pub struct AtHttpClient {
+    client: reqwest::Client,
+}
+
+#[cfg(not(target_arch = "wasm32"))]
+impl HttpClient for AtHttpClient {
+    async fn send_http(
+        &self,
+        request: atrium_xrpc::http::Request<Vec<u8>>,
+    ) -> core::result::Result<
+        atrium_xrpc::http::Response<Vec<u8>>,
+        Box<dyn std::error::Error + Send + Sync + 'static>,
+    > {
+        let response = self.client.execute(request.try_into()?).await?;
+        let mut builder = atrium_xrpc::http::Response::builder().status(response.status());
+        for (k, v) in response.headers() {
+            builder = builder.header(k, v);
+        }
+        builder.body(response.bytes().await?.to_vec()).map_err(Into::into)
+    }
+}
+
+#[cfg(not(target_arch = "wasm32"))]
+impl Default for AtHttpClient {
+    fn default() -> Self {
+        Self { client: reqwest::Client::new() }
+    }
+}
+
+#[cfg(target_arch = "wasm32")]
 pub struct AtHttpClient {
 }
 
+#[cfg(target_arch = "wasm32")]
 impl HttpClient for AtHttpClient {
     async fn send_http(
         &self,
@@ -243,6 +188,7 @@ impl HttpClient for AtHttpClient {
     }
 }
 
+#[cfg(target_arch = "wasm32")]
 impl Default for AtHttpClient {
     fn default() -> Self {
         Self {}
@@ -283,4 +229,73 @@ where
         // currently no op
         Ok(())
     }
+}
+
+#[cfg(not(target_arch = "wasm32"))]
+fn get_async_runtime() -> tokio::runtime::Runtime {
+    let rt = tokio::runtime::Builder::new_current_thread()
+        .enable_io()
+        .enable_time()
+        .build().unwrap();
+    rt
+}
+
+#[cfg(target_arch = "wasm32")]
+fn get_async_runtime() -> tokio::runtime::Runtime {
+    let rt = tokio::runtime::Builder::new_current_thread()
+        .build().unwrap();
+    rt
+}
+
+fn get_client<'a, T>(req: &DaHttpRequest, kv_store: &'a KvStore<T>, config: &Config) -> DaOAuthClient<'a, T>
+where T: kv::Store,
+{
+    let parsed_url = Url::parse(&req.url).unwrap(); 
+    let host = parsed_url.host().ok_or(DaError::new("Failed to parse host")).unwrap();
+
+    let shared_http_client = Arc::new(AtHttpClient::default());
+    let http_client = AtHttpClient::default();
+
+    let state_store = AtKvStore{
+        kv_store,
+    };
+
+    let root_uri = format!("https://{}", host);
+    let meta_uri = format!("{}{}/atproto-client-metadata.json", root_uri, config.path_prefix);
+    let redirect_uri = format!("{}{}/atproto-callback", root_uri, config.path_prefix);
+
+    let client_metadata = AtprotoClientMetadata {
+        client_id: meta_uri,
+        client_uri: root_uri,
+        redirect_uris: vec![redirect_uri],
+        token_endpoint_auth_method: AuthMethod::None,
+        grant_types: vec![GrantType::AuthorizationCode],
+        scopes: vec![Scope::Known(KnownScope::Atproto)],
+        jwks_uri: None,
+        token_endpoint_auth_signing_alg: None,
+    };
+
+    let config = OAuthClientConfig {
+        client_metadata,
+        keys: None,
+        resolver: OAuthResolverConfig {
+            did_resolver: CommonDidResolver::new(CommonDidResolverConfig {
+                plc_directory_url: DEFAULT_PLC_DIRECTORY_URL.to_string(),
+                http_client: shared_http_client.clone(),
+            }),
+            handle_resolver: AtprotoHandleResolver::new(AtprotoHandleResolverConfig {
+                dns_txt_resolver: AtDnsTxtResolver{},
+                http_client: shared_http_client.clone(),
+            }),
+            authorization_server_metadata: Default::default(),
+            protected_resource_metadata: Default::default(),
+        },
+        state_store,
+        http_client,
+    };
+
+    let client_res = OAuthClient::new(config);
+    let client = client_res.unwrap();
+
+    client
 }

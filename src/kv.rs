@@ -1,7 +1,7 @@
 use std::{fmt};
 use serde::{Serialize,Deserialize};
 
-pub trait Store {
+pub trait Store: Sync {
     fn get(&self, key: &str) -> Result<Vec<u8>, Error>;
     fn set(&self, key: &str, value: Vec<u8>) -> Result<(), Error>;
     //fn delete(&self, key: &str) -> Result<(), Error>;
