@@ -47,12 +47,16 @@ type SharedState = Arc<AppState>;
 #[tokio::main]
 async fn main() {
 
+    let args: Vec<String> = std::env::args().collect();
+
+    let admin_id = args[1].clone();
+
     let path_prefix = "/auth";
 
     let config = decentauth::Config{
         storage_prefix: "decent_auth".to_string(),
         path_prefix: path_prefix.to_string(),
-        admin_id: Some("anders@apitman.com".to_string()),
+        admin_id: Some(admin_id),
         id_header_name: None,
     };
 
