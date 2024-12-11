@@ -1,75 +1,10 @@
 {{{header}}}
-
-<h1>Login</h1>
-
-<!--
 {{#session}}
 <p>
   Signed in as {{id}}
 </p>
-<a href='/auth/logout'>Logout</a>
+<form action='{{prefix}}/logout' method='POST'>
+  <button class='formbutton' type='submit'>Logout</button>
+</form>
 {{/session}}
--->
-
-<form action='{{prefix}}/login' method='POST'>
-  <input type='hidden' name='return_target' value='{{return_target}}' />
-  <input type='hidden' name='type' value='oidc' />
-  <input type='hidden' name='oidc_provider' value='https://lastlogin.net' />
-  <button class='formbutton' type='submit'>
-    <svg viewBox="0 0 7 7" version="1.1" baseProfile="full" width="100" height="100"
-      xmlns="http://www.w3.org/2000/svg"
-      xmlns:xlink="http://www.w3.org/1999/xlink">
-
-      <style>
-        .first-l {
-          stroke: currentColor;
-        }
-        .second-l {
-          stroke: currentColor;
-        }
-      </style>
-
-      <g transform='rotate(-45 3.5 3.5)'>
-        <path class='first-l' d="M 2.5 1 L 2.5 4.5 L 4 4.5" fill='none' stroke-width='1' />
-        <path class='second-l' d="M 3 2.5 L 4.5 2.5 L 4.5 6" fill='none' stroke-width='1' />
-      </g>
-
-    </svg>
-    <span>Log in with LastLogin</span>
-  </button>
-</form>
-
-<form action='{{prefix}}/login' method='POST'>
-  <input type='hidden' name='return_target' value='{{return_target}}' />
-  <input type='hidden' name='type' value='oidc' />
-  <input type='hidden' name='oidc_provider' value='https://auth.tn7.org' />
-  <button class='formbutton' type='submit'>
-    <span>Log in with Obligator</span>
-  </button>
-</form>
-
-<form action='{{prefix}}/login' method='POST'>
-  <input type='hidden' name='return_target' value='{{return_target}}' />
-  <input type='hidden' name='type' value='admin-code' />
-  <button class='formbutton' type='submit'>
-    <span>Log in with Admin Code</span>
-  </button>
-</form>
-
-<form action='{{prefix}}/login' method='POST'>
-  <input type='hidden' name='return_target' value='{{return_target}}' />
-  <input type='hidden' name='type' value='atproto' />
-  <button class='formbutton' type='submit'>
-    <span>Log in with Bluesky/ATProto Handle</span>
-  </button>
-</form>
-
-<form action='{{prefix}}/login' method='POST'>
-  <input type='hidden' name='return_target' value='{{return_target}}' />
-  <input type='hidden' name='type' value='fediverse' />
-  <button class='formbutton' type='submit'>
-    <span>Log in with Fediverse Handle</span>
-  </button>
-</form>
-
 {{{footer}}}

@@ -68,6 +68,7 @@ const OAUTH_STATE_PREFIX: &str = "oauth_state";
 const HEADER_TMPL: &str = include_str!("../templates/header.html");
 const FOOTER_TMPL: &str = include_str!("../templates/footer.html");
 const INDEX_TMPL: &str = include_str!("../templates/index.html");
+const LOGIN_TMPL: &str = include_str!("../templates/login.html");
 const LOGIN_ADMIN_CODE_TMPL: &str = include_str!("../templates/login_admin_code.html");
 const LOGIN_FEDIVERSE_TMPL: &str = include_str!("../templates/login_fediverse.html");
 
@@ -248,7 +249,12 @@ fn handle<T>(req: DaHttpRequest, kv_store: &KvStore<T>, config: &Config) -> erro
 
     let res = if path == path_prefix {
 
-        let template = mustache::compile_str(INDEX_TMPL)?;
+        let template_str = match session {
+            Some(ref _session) => INDEX_TMPL,
+            None => LOGIN_TMPL,
+        };
+
+        let template = mustache::compile_str(template_str)?;
         let data = CommonTemplateData{ 
             header: HEADER_TMPL,
             footer: FOOTER_TMPL,
