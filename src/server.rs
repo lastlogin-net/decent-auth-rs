@@ -42,11 +42,11 @@ impl<T: kv::Store> Server<T> {
         let mut host = None;
         let mut headers = BTreeMap::new();
         for (key, value) in req.headers() {
-            if key == "host" {
-                if let Ok(val) = value.to_str() {
+            if let Ok(val) = value.to_str() {
+                if key == "host" {
                     host = Some(val);
-                    headers.insert(key.to_string(), vec![val.to_string()]);
                 }
+                headers.insert(key.to_string(), vec![val.to_string()]);
             }
         }
 
