@@ -145,6 +145,18 @@ impl From<openidconnect::http::header::ToStrError> for DaError {
     }
 }
 
+impl From<openidconnect::http::header::InvalidHeaderName> for DaError {
+    fn from(_value: openidconnect::http::header::InvalidHeaderName) -> Self {
+        Self::new("http::header::InvalidHeaderName")
+    }
+}
+
+impl From<openidconnect::http::header::InvalidHeaderValue> for DaError {
+    fn from(_value: openidconnect::http::header::InvalidHeaderValue) -> Self {
+        Self::new("http::header::InvalidHeaderValue")
+    }
+}
+
 #[derive(Debug,Serialize,Deserialize)]
 pub struct Session {
     id: String,

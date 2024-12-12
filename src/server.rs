@@ -22,8 +22,9 @@ impl<T: kv::Store> Server<T> {
 
         let mut headers = BTreeMap::new();
         for (key, value) in in_headers {
-            let val = value.to_str().unwrap().to_string();
-            headers.insert(key.to_string(), vec![val]);
+            if let Ok(val) = value.to_str() {
+                headers.insert(key.to_string(), vec![val.to_string()]);
+            }
         }
 
         let req = DaHttpRequest{
@@ -41,11 +42,12 @@ impl<T: kv::Store> Server<T> {
         let mut host = None;
         let mut headers = BTreeMap::new();
         for (key, value) in req.headers() {
-            let val = value.to_str().unwrap().to_string();
             if key == "host" {
-                host = Some(val.clone());
+                if let Ok(val) = value.to_str() {
+                    host = Some(val);
+                    headers.insert(key.to_string(), vec![val.to_string()]);
+                }
             }
-            headers.insert(key.to_string(), vec![val]);
         }
 
         let url = if let Some(query) = req.uri().query() {
@@ -55,24 +57,56 @@ impl<T: kv::Store> Server<T> {
             format!("http://{}{}", host.unwrap_or_default(), req.uri().path())
         };
 
+        let body = match std::str::from_utf8(req.body()) {
+            Ok(body) => body,
+            Err(e) => {
+                let mut res = http::Response::new(bytes::Bytes::from(e.to_string()));
+                *res.status_mut() = http::StatusCode::BAD_REQUEST;
+                return res;
+            },
+        };
+
         let da_req = DaHttpRequest{
             url,
             method: Some(req.method().as_str().to_string()),
             headers,
-            body: std::str::from_utf8(req.body()).unwrap().to_string(),
+            body: body.to_string(),
         };
 
-        let da_res = handle(da_req, &self.kv_store, &self.config).unwrap();
+        let da_res = match handle(da_req, &self.kv_store, &self.config) {
+            Ok(da_res) => da_res,
+            Err(e) => {
+                let mut res = http::Response::new(bytes::Bytes::from(e.to_string()));
+                *res.status_mut() = http::StatusCode::INTERNAL_SERVER_ERROR;
+                return res;
+            },
+        };
+
+        let status_code = match http::StatusCode::from_u16(da_res.code) {
+            Ok(code) => code,
+            Err(e) => {
+                let mut res = http::Response::new(bytes::Bytes::from(e.to_string()));
+                *res.status_mut() = http::StatusCode::INTERNAL_SERVER_ERROR;
+                return res;
+            },
+        };
 
         let mut res_builder = http::Response::builder()
-            .status(http::StatusCode::from_u16(da_res.code).unwrap());
+            .status(status_code);
 
         for (key, values) in da_res.headers {
             res_builder = res_builder.header(key, values[0].clone());
         }
 
-        let res = res_builder.body(bytes::Bytes::from(da_res.body));
+        let res = match res_builder.body(bytes::Bytes::from(da_res.body)) {
+            Ok(res) => res,
+            Err(e) => {
+                let mut res = http::Response::new(bytes::Bytes::from(e.to_string()));
+                *res.status_mut() = http::StatusCode::INTERNAL_SERVER_ERROR;
+                return res;
+            },
+        };
 
-        res.unwrap()
+        res
     }
 }

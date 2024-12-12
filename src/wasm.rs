@@ -70,7 +70,7 @@ pub fn http_client(req: HttpRequest) -> std::result::Result<HttpResponse, DaErro
     let mut headers = HeaderMap::new();
 
     for (k, v) in eres.headers() {
-        headers.insert(HeaderName::from_str(k).unwrap(), HeaderValue::from_str(v).unwrap());
+        headers.insert(HeaderName::from_str(k)?, HeaderValue::from_str(v)?);
     }
 
     let res = HttpResponse{
