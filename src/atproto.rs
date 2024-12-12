@@ -2,10 +2,13 @@ use std::collections::BTreeMap;
 use std::sync::Arc;
 use crate::{
     DaHttpRequest,DaHttpResponse,KvStore,Config,error,kv,Url,DaError,
-    parse_params,
+    parse_params,Session,SESSION_PREFIX,generate_random_text,
 };
+use cookie::Cookie;
 
 use atrium_xrpc::HttpClient;
+use atrium_api::types::string::Did;
+use atrium_common::resolver::Resolver;
 use atrium_identity::did::{CommonDidResolver, CommonDidResolverConfig, DEFAULT_PLC_DIRECTORY_URL};
 use atrium_identity::handle::{AtprotoHandleResolver, AtprotoHandleResolverConfig, DnsTxtResolver};
 use atrium_oauth_client::store::{SimpleStore,state::{StateStore,InternalStateData}};
@@ -63,12 +66,54 @@ pub fn handle_callback<T: kv::Store>(req: &DaHttpRequest, kv_store: &KvStore<T>,
     let client = get_client(req, kv_store, config);
 
     let rt = get_async_runtime();
-    rt.block_on(async {
+    let session = rt.block_on(async {
         let res = client.callback(callback_params).await.unwrap();
-        println!("{}", serde_json::to_string_pretty(&res).unwrap());
+
+        let did_resolver = CommonDidResolver::new(CommonDidResolverConfig {
+            plc_directory_url: DEFAULT_PLC_DIRECTORY_URL.to_string(),
+            http_client: Arc::new(AtHttpClient::default()),
+        });
+
+        let did_str = res.sub.clone();
+        let did = Did::new(did_str).unwrap();
+        let did_doc = did_resolver.resolve(&did).await.unwrap();
+
+        let id = match did_doc.also_known_as {
+            Some(aka) => {
+                if aka.len() > 0 && aka[0].len() > 5 {
+                    aka[0][5..].to_string()
+                }
+                else {
+                    did_doc.id
+                }
+            },
+            None => did_doc.id,
+        };
+
+        let session = Session{
+            id_type: "atproto".to_string(),
+            id,
+        };
+
+        session
     });
 
-    Ok(DaHttpResponse::new(200, "Hi there"))
+    let session_key = generate_random_text();
+    let session_cookie = Cookie::build((format!("{}_session_key", config.storage_prefix), &session_key))
+        .path("/")
+        .secure(true)
+        .http_only(true);
+
+    let kv_session_key = format!("/{}/{}/{}", config.storage_prefix, SESSION_PREFIX, &session_key);
+    kv_store.set(&kv_session_key, &session)?;
+
+    let mut res = DaHttpResponse::new(303, "");
+    res.headers = BTreeMap::from([
+        ("Location".to_string(), vec!["/".to_string()]),
+        ("Set-Cookie".to_string(), vec![session_cookie.to_string()])
+    ]);
+
+    Ok(res)
 }
 
 pub fn handle_client_metadata<T: kv::Store>(req: &DaHttpRequest, _kv_store: &KvStore<T>, config: &Config) -> error::Result<DaHttpResponse> {
@@ -105,6 +150,7 @@ pub fn handle_client_metadata<T: kv::Store>(req: &DaHttpRequest, _kv_store: &KvS
 pub struct AtDnsTxtResolver {
 }
 
+// TODO: actually implement
 impl DnsTxtResolver for AtDnsTxtResolver {
     async fn resolve(
         &self,
