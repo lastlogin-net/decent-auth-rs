@@ -48,7 +48,7 @@ where T: kv::Store,
     if let Some(handle_or_server) = params.get("handle_or_server") {
         let rt = get_async_runtime()?;
 
-        let client = get_client(req, kv_store, config);
+        let client = get_client(req, kv_store, config)?;
 
         let state = generate_random_text();
         let oauth_state_key = format!("/{}/{}/{}", config.storage_prefix, "atproto_oauth_state", state);
@@ -123,7 +123,7 @@ pub fn handle_callback<T: kv::Store>(req: &DaHttpRequest, kv_store: &KvStore<T>,
         state: Some(state.clone()),
     };
 
-    let client = get_client(req, kv_store, config);
+    let client = get_client(req, kv_store, config)?;
 
     let oauth_state_key = format!("/{}/{}/{}", config.storage_prefix, "atproto_oauth_state", state);
     let auth_req: AtPendingAuthRequest = kv_store.get(&oauth_state_key)?;
@@ -374,11 +374,11 @@ fn get_async_runtime() -> Result<tokio::runtime::Runtime, std::io::Error> {
     Ok(rt)
 }
 
-fn get_client<'a, T>(req: &DaHttpRequest, kv_store: &'a KvStore<T>, config: &Config) -> DaOAuthClient<'a, T>
+fn get_client<'a, T>(req: &DaHttpRequest, kv_store: &'a KvStore<T>, config: &Config) -> error::Result<DaOAuthClient<'a, T>>
 where T: kv::Store,
 {
-    let parsed_url = Url::parse(&req.url).unwrap(); 
-    let host = parsed_url.host().ok_or(DaError::new("Failed to parse host")).unwrap();
+    let parsed_url = Url::parse(&req.url)?; 
+    let host = parsed_url.host().ok_or(DaError::new("Failed to parse host"))?;
 
     let shared_http_client = Arc::new(AtHttpClient::default());
     let http_client = AtHttpClient::default();
@@ -424,7 +424,7 @@ where T: kv::Store,
     };
 
     let client_res = OAuthClient::new(config);
-    let client = client_res.unwrap();
+    let client = client_res?;
 
-    client
+    Ok(client)
 }
