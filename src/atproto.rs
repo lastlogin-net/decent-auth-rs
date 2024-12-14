@@ -208,7 +208,7 @@ impl DnsTxtResolver for AtDnsTxtResolver {
         let dns_res: DnsResponse = serde_json::from_slice(res.body())?;
 
         let values = dns_res.answer.iter()
-            .map(|rec| rec.data.replace("\\", "").replace("\"", ""))
+            .map(|rec| rec.data.replace("\"", ""))
             .collect::<Vec<_>>();
 
         Ok(values)
