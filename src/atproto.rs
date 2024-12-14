@@ -46,7 +46,7 @@ where T: kv::Store,
     let params = parse_params(&req).unwrap_or(HashMap::new());
 
     if let Some(handle_or_server) = params.get("handle_or_server") {
-        let rt = get_async_runtime();
+        let rt = get_async_runtime()?;
 
         let client = get_client(req, kv_store, config);
 
@@ -59,7 +59,7 @@ where T: kv::Store,
 
         kv_store.set(&oauth_state_key, auth_req)?;
 
-        let redir_url = rt.block_on(async { 
+        let redir_res: Result<String, atrium_oauth_client::Error> = rt.block_on(async { 
 
             let redir_url = client
                 .authorize(
@@ -73,10 +73,12 @@ where T: kv::Store,
                         ..Default::default()
                     }
                 )
-                .await.unwrap();
+                .await;
 
             redir_url
         });
+
+        let redir_url = redir_res?;
 
         let mut res = DaHttpResponse::new(303, &format!("Redirect to {}", redir_url));
         res.headers = BTreeMap::from([
@@ -109,13 +111,15 @@ where T: kv::Store,
 
 pub fn handle_callback<T: kv::Store>(req: &DaHttpRequest, kv_store: &KvStore<T>, config: &Config) -> error::Result<DaHttpResponse> {
 
-    let params = parse_params(&req).unwrap();
+    let params = parse_params(&req).unwrap_or(HashMap::new());
 
-    let state = params.get("state").unwrap().to_string();
+    let state = params.get("state").ok_or(DaError::new("Missing state param"))?;
+    let code = params.get("code").ok_or(DaError::new("Missing code param"))?;
+    let iss = params.get("iss").map(|x| x.to_string());
 
     let callback_params = CallbackParams{
-        code: params.get("code").unwrap().to_string(),
-        iss: Some(params.get("iss").unwrap().to_string()),
+        code: code.to_string(),
+        iss,
         state: Some(state.clone()),
     };
 
@@ -124,9 +128,9 @@ pub fn handle_callback<T: kv::Store>(req: &DaHttpRequest, kv_store: &KvStore<T>,
     let oauth_state_key = format!("/{}/{}/{}", config.storage_prefix, "atproto_oauth_state", state);
     let auth_req: AtPendingAuthRequest = kv_store.get(&oauth_state_key)?;
 
-    let rt = get_async_runtime();
-    let session = rt.block_on(async {
-        let res = client.callback(callback_params).await.unwrap();
+    let rt = get_async_runtime()?;
+    let session_res: Result<Session, atrium_oauth_client::Error> = rt.block_on(async {
+        let res = client.callback(callback_params).await?;
 
         let did_resolver = CommonDidResolver::new(CommonDidResolverConfig {
             plc_directory_url: DEFAULT_PLC_DIRECTORY_URL.to_string(),
@@ -135,7 +139,7 @@ pub fn handle_callback<T: kv::Store>(req: &DaHttpRequest, kv_store: &KvStore<T>,
 
         let did_str = res.sub.clone();
         let did = Did::new(did_str).unwrap();
-        let did_doc = did_resolver.resolve(&did).await.unwrap();
+        let did_doc = did_resolver.resolve(&did).await?;
 
         let id = match did_doc.also_known_as {
             Some(aka) => {
@@ -154,8 +158,10 @@ pub fn handle_callback<T: kv::Store>(req: &DaHttpRequest, kv_store: &KvStore<T>,
             id,
         };
 
-        session
+        Ok(session)
     });
+
+    let session = session_res?;
 
     let session_key = generate_random_text();
     let session_cookie = Cookie::build((format!("{}_session_key", config.storage_prefix), &session_key))
@@ -237,6 +243,7 @@ impl DnsTxtResolver for AtDnsTxtResolver {
 
 
 #[cfg(not(target_arch = "wasm32"))]
+#[derive(Clone)]
 pub struct AtHttpClient {
     client: reqwest::Client,
 }
@@ -283,7 +290,7 @@ impl HttpClient for AtHttpClient {
 
         let mut headers = BTreeMap::new();
         for (key, value) in req.headers() {
-            let val = value.to_str().unwrap().to_string();
+            let val = value.to_str()?.to_string();
             headers.insert(key.to_string(), val);
         }
 
@@ -329,15 +336,15 @@ impl<T> SimpleStore<String, InternalStateData> for AtKvStore<'_, T>
 where
     T: kv::Store,
 {
-    type Error = DaError;
+    type Error = kv::Error;
 
     async fn get(&self, key: &String) -> Result<Option<InternalStateData>, Self::Error> {
         let res = self.kv_store.get(key);
-        Ok(Some(res.unwrap()))
+        Ok(Some(res?))
     }
 
     async fn set(&self, key: String, value: InternalStateData) -> Result<(), Self::Error> {
-        Ok(self.kv_store.set(&key, value).unwrap())
+        Ok(self.kv_store.set(&key, value)?)
     }
 
     async fn del(&self, _key: &String) -> Result<(), Self::Error> {
@@ -352,19 +359,19 @@ where
 }
 
 #[cfg(not(target_arch = "wasm32"))]
-fn get_async_runtime() -> tokio::runtime::Runtime {
+fn get_async_runtime() -> Result<tokio::runtime::Runtime, std::io::Error> {
     let rt = tokio::runtime::Builder::new_current_thread()
         .enable_io()
         .enable_time()
-        .build().unwrap();
-    rt
+        .build()?;
+    Ok(rt)
 }
 
 #[cfg(target_arch = "wasm32")]
-fn get_async_runtime() -> tokio::runtime::Runtime {
+fn get_async_runtime() -> Result<tokio::runtime::Runtime, std::io::Error> {
     let rt = tokio::runtime::Builder::new_current_thread()
-        .build().unwrap();
-    rt
+        .build()?;
+    Ok(rt)
 }
 
 fn get_client<'a, T>(req: &DaHttpRequest, kv_store: &'a KvStore<T>, config: &Config) -> DaOAuthClient<'a, T>
