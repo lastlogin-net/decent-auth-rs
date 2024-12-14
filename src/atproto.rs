@@ -6,6 +6,7 @@ use crate::{
     FOOTER_TMPL,get_return_target,get_session,CommonTemplateData,
 };
 use cookie::Cookie;
+use serde::{Deserialize};
 
 use atrium_xrpc::HttpClient;
 use atrium_api::types::string::Did;
@@ -19,9 +20,20 @@ use atrium_oauth_client::{
     AtprotoClientMetadata, OAuthClientMetadata,CallbackParams,
 };
 
-const LOGIN_ATPROTO_TMPL: &str = include_str!("../templates/login_atproto.html");
+#[derive(Debug,Deserialize)]
+#[serde(rename_all = "PascalCase")]
+struct DnsResponse {
+    answer: Vec<Answer>,
+}
+
+#[derive(Debug,Deserialize)]
+struct Answer {
+    data: String,
+}
 
 type DaOAuthClient<'a, T> = OAuthClient<AtKvStore<'a, T>,CommonDidResolver<AtHttpClient>,AtprotoHandleResolver<AtDnsTxtResolver,AtHttpClient>,AtHttpClient>;
+
+const LOGIN_ATPROTO_TMPL: &str = include_str!("../templates/login_atproto.html");
 
 pub fn handle_login<T>(req: &DaHttpRequest, kv_store: &KvStore<T>, config: &Config) -> error::Result<DaHttpResponse> 
 where T: kv::Store,
@@ -175,17 +187,31 @@ pub fn handle_client_metadata<T: kv::Store>(req: &DaHttpRequest, _kv_store: &KvS
 }
 
 pub struct AtDnsTxtResolver {
+    http_client: AtHttpClient,
 }
 
 // TODO: actually implement
 impl DnsTxtResolver for AtDnsTxtResolver {
     async fn resolve(
         &self,
-        _query: &str,
+        query: &str,
     ) -> core::result::Result<Vec<String>, Box<dyn std::error::Error + Send + Sync + 'static>> {
-        println!("dns here");
-        Ok(vec![])
-        //Ok(self.resolver.txt_lookup(query).await?.iter().map(|txt| txt.to_string()).collect())
+
+        let req = http::Request::builder()
+            .method("GET")
+            .uri(format!("https://cloudflare-dns.com/dns-query?name={}&type=txt", query))
+            .header("Accept", "application/dns-json")
+            .body(vec![])?;
+
+        let res = self.http_client.send_http(req).await?;
+
+        let dns_res: DnsResponse = serde_json::from_slice(res.body())?;
+
+        let values = dns_res.answer.iter()
+            .map(|rec| rec.data.replace("\\", "").replace("\"", ""))
+            .collect::<Vec<_>>();
+
+        Ok(values)
     }
 }
 
@@ -221,6 +247,7 @@ impl Default for AtHttpClient {
 }
 
 #[cfg(target_arch = "wasm32")]
+#[derive(Clone)]
 pub struct AtHttpClient {
 }
 
@@ -357,7 +384,9 @@ where T: kv::Store,
                 http_client: shared_http_client.clone(),
             }),
             handle_resolver: AtprotoHandleResolver::new(AtprotoHandleResolverConfig {
-                dns_txt_resolver: AtDnsTxtResolver{},
+                dns_txt_resolver: AtDnsTxtResolver{
+                    http_client: http_client.clone(),
+                },
                 http_client: shared_http_client.clone(),
             }),
             authorization_server_metadata: Default::default(),
