@@ -1,0 +1,14 @@
+{{{header}}}
+
+<h1>ATProto Login</h1>
+
+<form action='{{prefix}}/login' method='POST'>
+  <input type='hidden' name='return_target' value='{{return_target}}' />
+  <input type='hidden' name='type' value='atproto' />
+  <input type='text' name='handle_or_server' value='https://bsky.social' placeholder='ATProto handle or server address' />
+  <button class='formbutton' type='submit'>
+    Log in with ATProto
+  </button>
+</form>
+
+{{{footer}}}

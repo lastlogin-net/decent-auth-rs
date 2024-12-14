@@ -1,8 +1,9 @@
-use std::collections::BTreeMap;
+use std::collections::{HashMap,BTreeMap};
 use std::sync::Arc;
 use crate::{
     DaHttpRequest,DaHttpResponse,KvStore,Config,error,kv,Url,DaError,
-    parse_params,Session,SESSION_PREFIX,generate_random_text,
+    parse_params,Session,SESSION_PREFIX,generate_random_text,HEADER_TMPL,
+    FOOTER_TMPL,get_return_target,get_session,CommonTemplateData,
 };
 use cookie::Cookie;
 
@@ -18,39 +19,65 @@ use atrium_oauth_client::{
     AtprotoClientMetadata, OAuthClientMetadata,CallbackParams,
 };
 
+const LOGIN_ATPROTO_TMPL: &str = include_str!("../templates/login_atproto.html");
+
 type DaOAuthClient<'a, T> = OAuthClient<AtKvStore<'a, T>,CommonDidResolver<AtHttpClient>,AtprotoHandleResolver<AtDnsTxtResolver,AtHttpClient>,AtHttpClient>;
 
 pub fn handle_login<T>(req: &DaHttpRequest, kv_store: &KvStore<T>, config: &Config) -> error::Result<DaHttpResponse> 
 where T: kv::Store,
 {
-    let rt = get_async_runtime();
+    let params = parse_params(&req).unwrap_or(HashMap::new());
 
-    let client = get_client(req, kv_store, config);
+    if let Some(handle_or_server) = params.get("handle_or_server") {
+        let rt = get_async_runtime();
 
-    let redir_url = rt.block_on(async {
+        let client = get_client(req, kv_store, config);
 
-        let redir_url = client
-            .authorize(
-                String::from("https://bsky.social"),
-                AuthorizeOptions {
-                    scopes: vec![
-                        Scope::Known(KnownScope::Atproto),
-                        Scope::Known(KnownScope::TransitionGeneric)
-                    ],
-                    ..Default::default()
-                }
-            )
-            .await.unwrap();
+        let redir_url = rt.block_on(async {
 
-        redir_url
-    });
+            let redir_url = client
+                .authorize(
+                    handle_or_server,
+                    AuthorizeOptions {
+                        scopes: vec![
+                            Scope::Known(KnownScope::Atproto),
+                            Scope::Known(KnownScope::TransitionGeneric)
+                        ],
+                        ..Default::default()
+                    }
+                )
+                .await.unwrap();
 
-    let mut res = DaHttpResponse::new(303, &format!("Redirect to {}", redir_url));
-    res.headers = BTreeMap::from([
-        ("Location".to_string(), vec![redir_url]),
-    ]);
+            redir_url
+        });
 
-    Ok(res)
+        let mut res = DaHttpResponse::new(303, &format!("Redirect to {}", redir_url));
+        res.headers = BTreeMap::from([
+            ("Location".to_string(), vec![redir_url]),
+        ]);
+
+        Ok(res)
+    }
+    else {
+        let session = get_session(&req, &kv_store, config);
+
+        let template = mustache::compile_str(LOGIN_ATPROTO_TMPL)?;
+        let data = CommonTemplateData{ 
+            header: HEADER_TMPL,
+            footer: FOOTER_TMPL,
+            session,
+            prefix: config.path_prefix.to_string(),
+            return_target: get_return_target(&req),
+        };
+        let body = template.render_to_string(&data)?;
+
+        let mut res = DaHttpResponse::new(200, &body);
+        res.headers = BTreeMap::from([
+            ("Content-Type".to_string(), vec!["text/html".to_string()]),
+        ]);
+
+        Ok(res)
+    }
 }
 
 pub fn handle_callback<T: kv::Store>(req: &DaHttpRequest, kv_store: &KvStore<T>, config: &Config) -> error::Result<DaHttpResponse> {
