@@ -6,7 +6,7 @@ use crate::{
     FOOTER_TMPL,get_return_target,get_session,CommonTemplateData,
 };
 use cookie::Cookie;
-use serde::{Deserialize};
+use serde::{Serialize,Deserialize};
 
 use atrium_xrpc::HttpClient;
 use atrium_api::types::string::Did;
@@ -31,6 +31,11 @@ struct Answer {
     data: String,
 }
 
+#[derive(Debug,Serialize,Deserialize)]
+struct AtPendingAuthRequest {
+    return_target: String,
+}
+
 type DaOAuthClient<'a, T> = OAuthClient<AtKvStore<'a, T>,CommonDidResolver<AtHttpClient>,AtprotoHandleResolver<AtDnsTxtResolver,AtHttpClient>,AtHttpClient>;
 
 const LOGIN_ATPROTO_TMPL: &str = include_str!("../templates/login_atproto.html");
@@ -45,7 +50,16 @@ where T: kv::Store,
 
         let client = get_client(req, kv_store, config);
 
-        let redir_url = rt.block_on(async {
+        let state = generate_random_text();
+        let oauth_state_key = format!("/{}/{}/{}", config.storage_prefix, "atproto_oauth_state", state);
+
+        let auth_req = AtPendingAuthRequest{
+            return_target: get_return_target(req),
+        };
+
+        kv_store.set(&oauth_state_key, auth_req)?;
+
+        let redir_url = rt.block_on(async { 
 
             let redir_url = client
                 .authorize(
@@ -55,6 +69,7 @@ where T: kv::Store,
                             Scope::Known(KnownScope::Atproto),
                             Scope::Known(KnownScope::TransitionGeneric)
                         ],
+                        state: Some(state),
                         ..Default::default()
                     }
                 )
@@ -96,13 +111,18 @@ pub fn handle_callback<T: kv::Store>(req: &DaHttpRequest, kv_store: &KvStore<T>,
 
     let params = parse_params(&req).unwrap();
 
+    let state = params.get("state").unwrap().to_string();
+
     let callback_params = CallbackParams{
         code: params.get("code").unwrap().to_string(),
         iss: Some(params.get("iss").unwrap().to_string()),
-        state: Some(params.get("state").unwrap().to_string()),
+        state: Some(state.clone()),
     };
 
     let client = get_client(req, kv_store, config);
+
+    let oauth_state_key = format!("/{}/{}/{}", config.storage_prefix, "atproto_oauth_state", state);
+    let auth_req: AtPendingAuthRequest = kv_store.get(&oauth_state_key)?;
 
     let rt = get_async_runtime();
     let session = rt.block_on(async {
@@ -148,7 +168,7 @@ pub fn handle_callback<T: kv::Store>(req: &DaHttpRequest, kv_store: &KvStore<T>,
 
     let mut res = DaHttpResponse::new(303, "");
     res.headers = BTreeMap::from([
-        ("Location".to_string(), vec!["/".to_string()]),
+        ("Location".to_string(), vec![auth_req.return_target]),
         ("Set-Cookie".to_string(), vec![session_cookie.to_string()])
     ]);
 
