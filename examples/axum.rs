@@ -18,7 +18,7 @@ struct KvStore {
 impl kv::Store for KvStore {
     fn get(&self, key: &str) -> Result<Vec<u8>, kv::Error> {
 
-        let map = self.map.lock().unwrap();
+        let map = self.map.lock().map_err(|_| kv::Error::new("Lock failed"))?;
 
         let value = &map.get(key).ok_or(kv::Error::new("Fail"))?;
 
@@ -30,7 +30,7 @@ impl kv::Store for KvStore {
     fn set(&self, key: &str, value: Vec<u8>) -> Result<(), kv::Error> {
         //println!("kv set {}, {:?}", key, value);
 
-        let mut map = self.map.lock().unwrap();
+        let mut map = self.map.lock().map_err(|_| kv::Error::new("Lock failed"))?;
 
         map.insert(key.to_string(), value);
 
