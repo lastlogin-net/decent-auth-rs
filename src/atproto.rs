@@ -138,7 +138,8 @@ pub fn handle_callback<T: kv::Store>(req: &DaHttpRequest, kv_store: &KvStore<T>,
         });
 
         let did_str = res.sub.clone();
-        let did = Did::new(did_str).unwrap();
+        let did = Did::new(did_str)
+            .map_err(|_e| atrium_oauth_client::Error::Callback("Failed to create DID".to_string()))?;
         let did_doc = did_resolver.resolve(&did).await?;
 
         let id = match did_doc.also_known_as {
