@@ -67,7 +67,6 @@ where T: kv::Store,
                     AuthorizeOptions {
                         scopes: vec![
                             Scope::Known(KnownScope::Atproto),
-                            Scope::Known(KnownScope::TransitionGeneric)
                         ],
                         state: Some(state),
                         ..Default::default()
@@ -196,7 +195,7 @@ pub fn handle_client_metadata<T: kv::Store>(req: &DaHttpRequest, _kv_store: &KvS
         redirect_uris: vec![redirect_uri],
         token_endpoint_auth_method: Some("none".to_string()),
         grant_types: Some(vec!["authorization_code".to_string()]),
-        scope: Some("atproto transition:generic".to_string()),
+        scope: Some("atproto".to_string()),
         dpop_bound_access_tokens: Some(true),
         jwks_uri: None,
         jwks: None,
