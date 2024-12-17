@@ -27,10 +27,28 @@ mod wasm;
 
 #[derive(Debug,Serialize,Deserialize)]
 pub struct Config {
+    #[serde(default)]
     pub storage_prefix: String,
+    #[serde(default)]
     pub path_prefix: String,
     pub admin_id: Option<String>,
     pub id_header_name: Option<String>,
+    pub login_methods: Option<Vec<LoginMethod>>,
+    pub oidc_providers: Option<Vec<OidcProvider>>,
+}
+
+#[derive(Debug,Serialize,Deserialize)]
+pub struct LoginMethod{
+    pub name: String,
+    pub r#type: String,
+}
+
+#[derive(Debug,Serialize,Deserialize)]
+pub struct OidcProvider {
+    pub uri: String,
+    pub name: Option<String>,
+    pub client_id: Option<String>,
+    pub client_secret: Option<String>,
 }
 
 
@@ -73,7 +91,8 @@ const LOGIN_ADMIN_CODE_TMPL: &str = include_str!("../templates/login_admin_code.
 const LOGIN_FEDIVERSE_TMPL: &str = include_str!("../templates/login_fediverse.html");
 
 #[derive(Serialize)]
-struct CommonTemplateData{
+struct CommonTemplateData<'a>{
+    config: &'a Config,
     header: &'static str,
     footer: &'static str,
     session: Option<Session>,
@@ -268,6 +287,7 @@ fn handle<T>(req: DaHttpRequest, kv_store: &KvStore<T>, config: &Config) -> erro
 
         let template = mustache::compile_str(template_str)?;
         let data = CommonTemplateData{ 
+            config,
             header: HEADER_TMPL,
             footer: FOOTER_TMPL,
             session,

@@ -83,18 +83,8 @@ pub fn http_client(req: HttpRequest) -> std::result::Result<HttpResponse, DaErro
 }
 
 fn get_config() -> error::Result<Config> {
-    let storage_prefix = extism_pdk::config::get("storage_prefix")?.unwrap_or("decent_auth".to_string());
-    let path_prefix = extism_pdk::config::get("path_prefix")?.unwrap_or("decent_auth".to_string());
-    let admin_id = extism_pdk::config::get("admin_id")?;
-    let id_header_name = extism_pdk::config::get("id_header_name")?;
-
-    let config = Config{
-        storage_prefix,
-        path_prefix,
-        admin_id,
-        id_header_name,
-    };
-
+    let config_json = extism_pdk::config::get("config")?.ok_or(DaError::new("Missing config"))?;
+    let config = serde_json::from_str(&config_json)?;
     Ok(config)
 }
 

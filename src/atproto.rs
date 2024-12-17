@@ -91,6 +91,7 @@ where T: kv::Store,
 
         let template = mustache::compile_str(LOGIN_ATPROTO_TMPL)?;
         let data = CommonTemplateData{ 
+            config,
             header: HEADER_TMPL,
             footer: FOOTER_TMPL,
             session,

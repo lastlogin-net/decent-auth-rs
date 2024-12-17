@@ -2,6 +2,16 @@
 
 <h1>Login</h1>
 
+{{#config.oidc_providers}}
+<form action='{{prefix}}/login' method='POST'>
+  <input type='hidden' name='return_target' value='{{return_target}}' />
+  <input type='hidden' name='type' value='oidc' />
+  <input type='hidden' name='oidc_provider' value='{{uri}}' />
+  <button class='formbutton' type='submit'>Log in with {{name}}</button>
+</form>
+{{/config.oidc_providers}}
+
+<!-- TODO: re-implement logo support
 <form action='{{prefix}}/login' method='POST'>
   <input type='hidden' name='return_target' value='{{return_target}}' />
   <input type='hidden' name='type' value='oidc' />
@@ -29,38 +39,16 @@
     <span>Log in with LastLogin</span>
   </button>
 </form>
+-->
 
+{{#config.login_methods}}
 <form action='{{prefix}}/login' method='POST'>
   <input type='hidden' name='return_target' value='{{return_target}}' />
-  <input type='hidden' name='type' value='oidc' />
-  <input type='hidden' name='oidc_provider' value='https://auth.tn7.org' />
+  <input type='hidden' name='type' value='{{type}}' />
   <button class='formbutton' type='submit'>
-    <span>Log in with Obligator</span>
+    <span>Log in with {{name}}</span>
   </button>
 </form>
-
-<form action='{{prefix}}/login' method='POST'>
-  <input type='hidden' name='return_target' value='{{return_target}}' />
-  <input type='hidden' name='type' value='admin-code' />
-  <button class='formbutton' type='submit'>
-    <span>Log in with Admin Code</span>
-  </button>
-</form>
-
-<form action='{{prefix}}/login' method='POST'>
-  <input type='hidden' name='return_target' value='{{return_target}}' />
-  <input type='hidden' name='type' value='atproto' />
-  <button class='formbutton' type='submit'>
-    <span>Log in with Bluesky/ATProto Handle</span>
-  </button>
-</form>
-
-<form action='{{prefix}}/login' method='POST'>
-  <input type='hidden' name='return_target' value='{{return_target}}' />
-  <input type='hidden' name='type' value='fediverse' />
-  <button class='formbutton' type='submit'>
-    <span>Log in with Fediverse Handle</span>
-  </button>
-</form>
+{{/config.login_methods}}
 
 {{{footer}}}

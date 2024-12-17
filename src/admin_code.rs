@@ -62,6 +62,7 @@ pub fn handle_login<T: kv::Store>(req: &DaHttpRequest, kv_store: &KvStore<T>, pa
 
         let template = mustache::compile_str(LOGIN_ADMIN_CODE_TMPL)?;
         let data = CommonTemplateData{ 
+            config,
             header: HEADER_TMPL,
             footer: FOOTER_TMPL,
             session,
