@@ -4,9 +4,8 @@ use crate::{
     HttpRequest,Url,Serialize,Deserialize,DaError,KvStore,Config,kv,
     parse_params,DaHttpRequest,generate_random_text,Session,SESSION_PREFIX,
     get_return_target,HEADER_TMPL,FOOTER_TMPL,CommonTemplateData,
-    LOGIN_FEDIVERSE_TMPL,get_session,
+    LOGIN_FEDIVERSE_TMPL,get_session,create_session_cookie,
 };
-use cookie::{Cookie};
 
 #[cfg(target_arch = "wasm32")]
 use crate::http_client;
@@ -210,10 +209,7 @@ pub fn handle_callback<T: kv::Store>(req: &DaHttpRequest, kv_store: &KvStore<T>,
     };
 
     let session_key = generate_random_text();
-    let session_cookie = Cookie::build((format!("{}_session_key", config.storage_prefix), &session_key))
-        .path("/")
-        .secure(true)
-        .http_only(true);
+    let session_cookie = create_session_cookie(&config.storage_prefix, &session_key);
 
     let kv_session_key = format!("/{}/{}/{}", config.storage_prefix, SESSION_PREFIX, &session_key);
     kv_store.set(&kv_session_key, &session)?;

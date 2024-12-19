@@ -2,8 +2,9 @@ use std::collections::{BTreeMap};
 use crate::{error,Params,DaHttpResponse};
 use crate::{
     SESSION_PREFIX,Session,
-    Cookie,get_return_target,HEADER_TMPL,FOOTER_TMPL,LOGIN_ADMIN_CODE_TMPL,
+    get_return_target,HEADER_TMPL,FOOTER_TMPL,LOGIN_ADMIN_CODE_TMPL,
     CommonTemplateData,get_session,DaHttpRequest,Config,KvStore,
+    create_session_cookie,generate_random_text,
 };
 use openidconnect::CsrfToken;
 use crate::kv;
@@ -25,11 +26,8 @@ pub fn handle_login<T: kv::Store>(req: &DaHttpRequest, kv_store: &KvStore<T>, pa
         let key = format!("/{}/{}/{}", config.storage_prefix, "pending_admin_codes", code);
         let _val: String = kv_store.get(&key)?;
 
-        let session_key = CsrfToken::new_random().secret().to_string();
-        let session_cookie = Cookie::build((format!("{}_session_key", config.storage_prefix), &session_key))
-            .path("/")
-            .secure(true)
-            .http_only(true);
+        let session_key = generate_random_text();
+        let session_cookie = create_session_cookie(&config.storage_prefix, &session_key);
 
         let session = Session{
             id_type: "email".to_string(),

@@ -1,7 +1,8 @@
 use std::collections::{HashMap,BTreeMap};
 use crate::{
     get_return_target,DaHttpResponse,OAUTH_STATE_PREFIX,KvStore,
-    DaHttpRequest,kv,error,SESSION_PREFIX,Session,Config,DaError
+    DaHttpRequest,kv,error,SESSION_PREFIX,Session,Config,DaError,
+    create_session_cookie,
 };
 use openidconnect::{
     Scope,PkceCodeChallenge,Nonce,CsrfToken,TokenResponse,PkceCodeVerifier,
@@ -10,7 +11,6 @@ use openidconnect::{
 };
 use serde::{Serialize,Deserialize};
 use url::Url;
-use cookie::{Cookie};
 
 #[cfg(target_arch = "wasm32")]
 use crate::http_client;
@@ -90,10 +90,7 @@ pub fn handle_callback<T: kv::Store>(req: &DaHttpRequest, kv_store: &KvStore<T>,
     let claims = id_token.claims(&client.id_token_verifier(), &nonce)?;
 
     let session_key = CsrfToken::new_random().secret().to_string();
-    let session_cookie = Cookie::build((format!("{}_session_key", config.storage_prefix), &session_key))
-        .path("/")
-        .secure(true)
-        .http_only(true);
+    let session_cookie = create_session_cookie(&config.storage_prefix, &session_key);
 
     let session = Session{
         id_type: "email".to_string(),

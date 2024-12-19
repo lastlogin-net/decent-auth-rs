@@ -4,8 +4,8 @@ use crate::{
     DaHttpRequest,DaHttpResponse,KvStore,Config,error,kv,Url,DaError,
     parse_params,Session,SESSION_PREFIX,generate_random_text,HEADER_TMPL,
     FOOTER_TMPL,get_return_target,get_session,CommonTemplateData,
+    create_session_cookie,
 };
-use cookie::Cookie;
 use serde::{Serialize,Deserialize};
 
 use atrium_xrpc::HttpClient;
@@ -165,10 +165,7 @@ pub fn handle_callback<T: kv::Store>(req: &DaHttpRequest, kv_store: &KvStore<T>,
     let session = session_res?;
 
     let session_key = generate_random_text();
-    let session_cookie = Cookie::build((format!("{}_session_key", config.storage_prefix), &session_key))
-        .path("/")
-        .secure(true)
-        .http_only(true);
+    let session_cookie = create_session_cookie(&config.storage_prefix, &session_key);
 
     let kv_session_key = format!("/{}/{}/{}", config.storage_prefix, SESSION_PREFIX, &session_key);
     kv_store.set(&kv_session_key, &session)?;

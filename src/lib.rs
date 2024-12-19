@@ -2,7 +2,7 @@ use serde::{Serialize,Deserialize};
 use url::{Url};
 use std::collections::{HashMap,BTreeMap};
 use std::{fmt};
-use cookie::{Cookie,time::Duration};
+use cookie::{Cookie,SameSite,CookieBuilder,time::Duration};
 use openidconnect::{
     HttpRequest,CsrfToken,
     http::{HeaderMap,HeaderName,HeaderValue,method::Method},
@@ -387,4 +387,12 @@ fn handle<T>(req: DaHttpRequest, kv_store: &KvStore<T>, config: &Config) -> erro
 
 fn generate_random_text() -> String {
     CsrfToken::new_random().secret().to_string()
+}
+
+fn create_session_cookie<'a>(storage_prefix: &'a str, session_key: &'a str) -> CookieBuilder<'a> {
+    Cookie::build((format!("{}_session_key", storage_prefix), session_key))
+        .path("/")
+        .secure(true)
+        .http_only(true)
+        .same_site(SameSite::Lax)
 }
