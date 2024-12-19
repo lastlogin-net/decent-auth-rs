@@ -27,14 +27,22 @@ mod wasm;
 
 #[derive(Debug,Serialize,Deserialize)]
 pub struct Config {
-    #[serde(default)]
+    #[serde(default = "default_storage_prefix")]
     pub storage_prefix: String,
-    #[serde(default)]
+    #[serde(default = "default_path_prefix")]
     pub path_prefix: String,
     pub admin_id: Option<String>,
     pub id_header_name: Option<String>,
     pub login_methods: Option<Vec<LoginMethod>>,
     pub oidc_providers: Option<Vec<OidcProvider>>,
+}
+
+fn default_storage_prefix() -> String {
+    "decent_auth".to_string()
+}
+
+fn default_path_prefix() -> String {
+    "/decent-auth".to_string()
 }
 
 #[derive(Debug,Serialize,Deserialize)]
@@ -278,7 +286,7 @@ fn handle<T>(req: DaHttpRequest, kv_store: &KvStore<T>, config: &Config) -> erro
 
     let path = parsed_url.path();
 
-    let res = if path == path_prefix {
+    let res = if path == path_prefix || path == format!("{}/", path_prefix) {
 
         let template_str = match session {
             Some(ref _session) => INDEX_TMPL,
