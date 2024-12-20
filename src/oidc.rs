@@ -1,7 +1,7 @@
 use std::collections::{HashMap,BTreeMap};
 use crate::{
     get_return_target,DaHttpResponse,OAUTH_STATE_PREFIX,KvStore,
-    DaHttpRequest,kv,error,SESSION_PREFIX,Session,Config,DaError,
+    DaHttpRequest,kv,error,SESSION_PREFIX,SessionBuilder,IdType,Config,DaError,
     create_session_cookie,
 };
 use openidconnect::{
@@ -92,10 +92,8 @@ pub fn handle_callback<T: kv::Store>(req: &DaHttpRequest, kv_store: &KvStore<T>,
     let session_key = CsrfToken::new_random().secret().to_string();
     let session_cookie = create_session_cookie(&config.storage_prefix, &session_key);
 
-    let session = Session{
-        id_type: "email".to_string(),
-        id: claims.subject().to_string(),
-    };
+    let session = SessionBuilder::new(IdType::Email, claims.subject())
+        .build();
 
     let kv_session_key = format!("/{}/{}/{}", config.storage_prefix, SESSION_PREFIX, &session_key);
     kv_store.set(&kv_session_key, &session)?;

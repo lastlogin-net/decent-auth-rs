@@ -7,6 +7,7 @@ use openidconnect::{
     HttpRequest,CsrfToken,
     http::{HeaderMap,HeaderName,HeaderValue,method::Method},
 };
+use chrono::{DateTime,Utc};
 pub use server::Server;
 
 #[cfg(target_arch = "wasm32")]
@@ -83,9 +84,13 @@ impl<T: kv::Store> KvStore<T> {
         Ok(self.byte_kv.set(key, bytes)?)
     }
 
-    //fn delete(&self, key: &str) -> Result<(), kv::Error> {
-    //    Ok(self.byte_kv.delete(key)?)
-    //}
+    fn delete(&self, key: &str) -> Result<(), kv::Error> {
+        Ok(self.byte_kv.delete(key)?)
+    }
+
+    fn list(&self, prefix: &str) -> Result<Vec<String>, kv::Error> {
+        self.byte_kv.list(prefix)
+    }
 }
 
 const SESSION_PREFIX: &str = "sessions";
@@ -187,17 +192,50 @@ impl From<openidconnect::http::header::InvalidHeaderValue> for DaError {
 #[derive(Debug,Serialize,Deserialize)]
 pub struct Session {
     id: String,
-    id_type: String,
+    id_type: IdType,
+    created_at: DateTime<Utc>,
+}
+
+#[derive(Debug,Serialize,Deserialize)]
+enum IdType {
+    Email,
+    AtProto,
+    Fediverse,
+}
+
+pub struct SessionBuilder {
+    id: String,
+    id_type: IdType,
+}
+
+impl SessionBuilder {
+    fn new(id_type: IdType, id: &str) -> Self {
+        Self{
+            id_type,
+            id: id.to_string(),
+        }
+    }
+
+    fn build(self) -> Session {
+
+        let utc: DateTime<Utc> = Utc::now();
+
+        Session{
+            id_type: self.id_type,
+            id: self.id,
+            created_at: utc,
+        }
+    }
 }
 
 fn get_session<T: kv::Store>(req: &DaHttpRequest, kv_store: &KvStore<T>, config: &Config) -> Option<Session> {
 
+    clear_expired_sessions(kv_store, config);
+
     if let Some(id_header_name) = &config.id_header_name {
         if let Some(ids) = req.headers.get(&id_header_name.to_lowercase()) {
-            return Some(Session{
-                id: ids[0].clone(),
-                id_type: "email".to_string(),
-            });
+            // TODO: might not be email
+            return Some(SessionBuilder::new(IdType::Email, &ids[0]).build());
         }
     }
 
@@ -271,12 +309,29 @@ fn parse_params(req: &DaHttpRequest) -> Option<Params> {
     None
 }
 
+const MAX_SESSION_AGE: i64 = 86400;
+
+fn clear_expired_sessions<T: kv::Store>(kv_store: &KvStore<T>, config: &Config) {
+
+    let now: DateTime<Utc> = Utc::now();
+
+    let session_prefix = format!("/{}/{}/", config.storage_prefix, SESSION_PREFIX);
+    let session_keys = kv_store.list(&session_prefix).unwrap_or(vec![]);
+
+    for key in session_keys {
+        if let Ok(session) = kv_store.get::<Session>(&key) {
+            let age = now.signed_duration_since(session.created_at);
+            if age.num_seconds() > MAX_SESSION_AGE {
+                let _ = kv_store.delete(&key);
+            }
+        }
+    }
+}
 
 
 fn handle<T>(req: DaHttpRequest, kv_store: &KvStore<T>, config: &Config) -> error::Result<DaHttpResponse> 
     where T: kv::Store
 {
-
     let path_prefix = &config.path_prefix;
     let storage_prefix = &config.storage_prefix;
 

@@ -4,7 +4,7 @@ use crate::{
     DaHttpRequest,DaHttpResponse,KvStore,Config,error,kv,Url,DaError,
     parse_params,Session,SESSION_PREFIX,generate_random_text,HEADER_TMPL,
     FOOTER_TMPL,get_return_target,get_session,CommonTemplateData,
-    create_session_cookie,
+    create_session_cookie,SessionBuilder,IdType
 };
 use serde::{Serialize,Deserialize};
 
@@ -154,10 +154,8 @@ pub fn handle_callback<T: kv::Store>(req: &DaHttpRequest, kv_store: &KvStore<T>,
             None => did_doc.id,
         };
 
-        let session = Session{
-            id_type: "atproto".to_string(),
-            id,
-        };
+        let session = SessionBuilder::new(IdType::AtProto, &id)
+            .build();
 
         Ok(session)
     });

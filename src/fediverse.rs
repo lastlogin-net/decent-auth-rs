@@ -2,9 +2,9 @@ use std::collections::{HashMap,BTreeMap};
 use crate::{
     error,DaHttpResponse,Method,HeaderMap,HeaderValue,
     HttpRequest,Url,Serialize,Deserialize,DaError,KvStore,Config,kv,
-    parse_params,DaHttpRequest,generate_random_text,Session,SESSION_PREFIX,
-    get_return_target,HEADER_TMPL,FOOTER_TMPL,CommonTemplateData,
-    LOGIN_FEDIVERSE_TMPL,get_session,create_session_cookie,
+    parse_params,DaHttpRequest,generate_random_text,SessionBuilder,IdType,
+    SESSION_PREFIX,get_return_target,HEADER_TMPL,FOOTER_TMPL,
+    CommonTemplateData,LOGIN_FEDIVERSE_TMPL,get_session,create_session_cookie,
 };
 
 #[cfg(target_arch = "wasm32")]
@@ -203,10 +203,8 @@ pub fn handle_callback<T: kv::Store>(req: &DaHttpRequest, kv_store: &KvStore<T>,
 
     let id = format!("@{}@{}", cred_res.username, auth_req.server);
 
-    let session = Session{
-        id_type: "fediverse".to_string(),
-        id,
-    };
+    let session = SessionBuilder::new(IdType::Fediverse, &id)
+        .build();
 
     let session_key = generate_random_text();
     let session_cookie = create_session_cookie(&config.storage_prefix, &session_key);

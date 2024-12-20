@@ -1,7 +1,7 @@
 use std::collections::{BTreeMap};
 use crate::{error,Params,DaHttpResponse};
 use crate::{
-    SESSION_PREFIX,Session,
+    SESSION_PREFIX,SessionBuilder,IdType,
     get_return_target,HEADER_TMPL,FOOTER_TMPL,LOGIN_ADMIN_CODE_TMPL,
     CommonTemplateData,get_session,DaHttpRequest,Config,KvStore,
     create_session_cookie,generate_random_text,
@@ -29,10 +29,9 @@ pub fn handle_login<T: kv::Store>(req: &DaHttpRequest, kv_store: &KvStore<T>, pa
         let session_key = generate_random_text();
         let session_cookie = create_session_cookie(&config.storage_prefix, &session_key);
 
-        let session = Session{
-            id_type: "email".to_string(),
-            id: admin_id.to_string(),
-        };
+        // TODO: admin code logins might not be email IDs
+        let session = SessionBuilder::new(IdType::Email, &admin_id)
+            .build();
 
         let kv_session_key = format!("/{}/{}/{}", config.storage_prefix, SESSION_PREFIX, &session_key);
         kv_store.set(&kv_session_key, session)?;

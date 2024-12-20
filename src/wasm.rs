@@ -15,6 +15,7 @@ extern "ExtismHost" {
     fn kv_read(key: &str) -> Vec<u8>; 
     fn kv_write(key: &str, value: Vec<u8>); 
     fn kv_delete(key: &str); 
+    fn kv_list(prefix: &str) -> Vec<u8>; 
 }
 
 impl From<extism_pdk::Error> for kv::Error {
@@ -47,9 +48,19 @@ impl kv::Store for ExtismKv {
         Ok(())
     }
 
-    //fn delete(&self, _key: &str) -> Result<(), kv::Error> {
-    //    Err(kv::Error::new("Not implemented"))
-    //}
+    fn list(&self, key: &str) -> Result<Vec<String>, kv::Error> {
+        let bytes = unsafe { kv_list(key)? };
+        if bytes[0] != ERROR_CODE_NO_ERROR {
+            return Err(kv::Error::new("kv_list bad code"));
+        }
+
+        Ok(serde_json::from_slice::<Vec<String>>(&bytes[1..])?)
+    }
+
+    fn delete(&self, key: &str) -> Result<(), kv::Error> {
+        unsafe { kv_delete(key)? };
+        Ok(())
+    }
 }
 
 #[cfg(target_arch = "wasm32")]

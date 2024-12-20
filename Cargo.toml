@@ -23,6 +23,7 @@ atrium-xrpc = { path = "../atrium/atrium-xrpc" }
 atrium-common = { path = "../atrium/atrium-common" }
 atrium-identity = { path = "../atrium/atrium-oauth/identity" }
 atrium-oauth-client = { path = "../atrium/atrium-oauth/oauth-client", default-features = false }
+chrono = "0.4.39"
 
 [target.'cfg(target_arch = "wasm32")'.dependencies]
 tokio = { version = "1.41.1", features = ["rt"] }
