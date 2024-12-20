@@ -309,26 +309,6 @@ fn parse_params(req: &DaHttpRequest) -> Option<Params> {
     None
 }
 
-const MAX_SESSION_AGE: i64 = 86400;
-
-fn clear_expired_sessions<T: kv::Store>(kv_store: &KvStore<T>, config: &Config) {
-
-    let now: DateTime<Utc> = Utc::now();
-
-    let session_prefix = format!("/{}/{}/", config.storage_prefix, SESSION_PREFIX);
-    let session_keys = kv_store.list(&session_prefix).unwrap_or(vec![]);
-
-    for key in session_keys {
-        if let Ok(session) = kv_store.get::<Session>(&key) {
-            let age = now.signed_duration_since(session.created_at);
-            if age.num_seconds() > MAX_SESSION_AGE {
-                let _ = kv_store.delete(&key);
-            }
-        }
-    }
-}
-
-
 fn handle<T>(req: DaHttpRequest, kv_store: &KvStore<T>, config: &Config) -> error::Result<DaHttpResponse> 
     where T: kv::Store
 {
@@ -450,4 +430,23 @@ fn create_session_cookie<'a>(storage_prefix: &'a str, session_key: &'a str) -> C
         .secure(true)
         .http_only(true)
         .same_site(SameSite::Lax)
+}
+
+const MAX_SESSION_AGE: i64 = 86400;
+
+fn clear_expired_sessions<T: kv::Store>(kv_store: &KvStore<T>, config: &Config) {
+
+    let now: DateTime<Utc> = Utc::now();
+
+    let session_prefix = format!("/{}/{}/", config.storage_prefix, SESSION_PREFIX);
+    let session_keys = kv_store.list(&session_prefix).unwrap_or(vec![]);
+
+    for key in session_keys {
+        if let Ok(session) = kv_store.get::<Session>(&key) {
+            let age = now.signed_duration_since(session.created_at);
+            if age.num_seconds() > MAX_SESSION_AGE {
+                let _ = kv_store.delete(&key);
+            }
+        }
+    }
 }
