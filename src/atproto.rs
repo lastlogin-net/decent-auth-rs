@@ -127,6 +127,7 @@ pub fn handle_callback<T: kv::Store>(req: &DaHttpRequest, kv_store: &KvStore<T>,
 
     let oauth_state_key = format!("/{}/{}/{}", config.storage_prefix, "atproto_oauth_state", state);
     let auth_req: AtPendingAuthRequest = kv_store.get(&oauth_state_key)?;
+    let _ = kv_store.delete(&oauth_state_key);
 
     let rt = get_async_runtime()?;
     let session_res: Result<Session, atrium_oauth_client::Error> = rt.block_on(async {

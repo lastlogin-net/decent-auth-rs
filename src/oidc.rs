@@ -73,6 +73,7 @@ pub fn handle_callback<T: kv::Store>(req: &DaHttpRequest, kv_store: &KvStore<T>,
 
     let state_key = format!("/{}/{}/{}", config.storage_prefix, OAUTH_STATE_PREFIX, state);
     let flow_state: FlowState = kv_store.get(&state_key)?;
+    let _ = kv_store.delete(&state_key);
 
     let code = hash_query.get("code").ok_or(DaError::new("Missing code param"))?;
 

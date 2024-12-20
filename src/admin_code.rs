@@ -25,6 +25,7 @@ pub fn handle_login<T: kv::Store>(req: &DaHttpRequest, kv_store: &KvStore<T>, pa
 
         let key = format!("/{}/{}/{}", config.storage_prefix, "pending_admin_codes", code);
         let _val: String = kv_store.get(&key)?;
+        let _ = kv_store.delete(&key);
 
         let session_key = generate_random_text();
         let session_cookie = create_session_cookie(&config.storage_prefix, &session_key);
