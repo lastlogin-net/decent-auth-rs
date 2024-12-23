@@ -50,12 +50,12 @@ impl kv::Store for KvStore {
         let map = self.map.lock().map_err(|_| kv::Error::new("Lock failed"))?;
 
         let keys = map.iter()
-        .filter(|(k,_v)| {
-            k.starts_with(prefix)
-        })
-        .map(|(k,_v)| {
-            k.clone()
-        }).collect::<Vec<String>>();
+            .filter(|(k,_v)| {
+                k.starts_with(prefix)
+            })
+            .map(|(k,_v)| {
+                k.clone()
+            }).collect::<Vec<String>>();
 
         Ok(keys)
     }
