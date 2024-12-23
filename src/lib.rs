@@ -5,7 +5,7 @@ use std::{fmt};
 use cookie::{Cookie,SameSite,CookieBuilder,time::Duration};
 use openidconnect::{
     HttpRequest,CsrfToken,
-    http::{HeaderMap,HeaderName,HeaderValue,method::Method},
+    http::{HeaderMap,HeaderValue,method::Method},
 };
 use chrono::{DateTime,Utc};
 pub use server::Server;

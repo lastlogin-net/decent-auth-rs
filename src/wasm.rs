@@ -1,9 +1,9 @@
 use crate::{
     KvStore,get_session,DaError,Session,handle,DaHttpRequest,DaHttpResponse,
-    Config,error,kv,BTreeMap,HeaderValue,HeaderName
+    Config,error,kv,BTreeMap,HeaderValue
 };
 use openidconnect::{
-    HttpRequest,HttpResponse,http::{HeaderMap,StatusCode},
+    HttpRequest,HttpResponse,http::{HeaderMap,HeaderName,StatusCode},
 };
 use extism_pdk::{plugin_fn,host_fn,FnResult,Json,http as extism_http};
 use std::str::FromStr;
