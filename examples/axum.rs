@@ -9,7 +9,7 @@ use axum::{
 };
 use axum_macros::debug_handler;
 
-use decentauth::{http,kv,LoginMethod,OidcProvider};
+use decentauth::{http,kv,LoginMethod};
 
 struct KvStore {
     map: Mutex<HashMap<String, Vec<u8>>>,
@@ -82,22 +82,13 @@ async fn main() {
         admin_id: Some(admin_id),
         id_header_name: None,
         login_methods: vec![
-            LoginMethod{
-                name: "Admin Code".to_string(),
-                r#type: "admin-code".to_string(),
-            },
-            LoginMethod{
-                name: "Fediverse".to_string(),
-                r#type: "fediverse".to_string(),
-            },
-        ].into(),
-        oidc_providers: vec![
-            OidcProvider{
+            LoginMethod::Oidc {
                 uri: "https://lastlogin.net".to_string(),
-                name: Some("LastLogin".to_string()),
-                client_id: None,
-                client_secret: None,
+                name: "LastLogin".to_string(),
             },
+            LoginMethod::AdminCode,
+            LoginMethod::AtProto,
+            LoginMethod::Fediverse,
         ].into(),
     };
 

@@ -35,7 +35,6 @@ pub struct Config {
     pub admin_id: Option<String>,
     pub id_header_name: Option<String>,
     pub login_methods: Option<Vec<LoginMethod>>,
-    pub oidc_providers: Option<Vec<OidcProvider>>,
 }
 
 fn default_storage_prefix() -> String {
@@ -47,19 +46,19 @@ fn default_path_prefix() -> String {
 }
 
 #[derive(Debug,Serialize,Deserialize)]
-pub struct LoginMethod{
-    pub name: String,
-    pub r#type: String,
+#[serde(tag = "type")]
+pub enum LoginMethod {
+    #[serde(rename = "ATProto")]
+    AtProto,
+    Fediverse,
+    #[serde(rename = "Admin Code")]
+    AdminCode,
+    #[serde(rename = "OIDC")]
+    Oidc {
+        name: String,
+        uri: String,
+    },
 }
-
-#[derive(Debug,Serialize,Deserialize)]
-pub struct OidcProvider {
-    pub uri: String,
-    pub name: Option<String>,
-    pub client_id: Option<String>,
-    pub client_secret: Option<String>,
-}
-
 
 impl From<serde_json::Error> for kv::Error {
     fn from(_value: serde_json::Error) -> Self {
@@ -353,7 +352,8 @@ fn handle<T>(req: DaHttpRequest, kv_store: &KvStore<T>, config: &Config) -> erro
 
         if let Some(login_type) = login_type {
             match login_type.as_str() {
-                "oidc" => {
+                // TODO: see if we can use actual enum for this
+                "OIDC" => {
                     let oidc_provider = params.get("oidc_provider");
                     if let Some(oidc_provider) = oidc_provider {
                         return oidc::handle_login(&req, kv_store, &storage_prefix, &path_prefix, &oidc_provider);
@@ -362,13 +362,13 @@ fn handle<T>(req: DaHttpRequest, kv_store: &KvStore<T>, config: &Config) -> erro
                         return Ok(DaHttpResponse::new(400, "Missing OIDC provider"));
                     }
                 },
-                "admin-code" => {
+                "Admin Code" => {
                     return admin_code::handle_login(&req, kv_store, &params, config);
                 },
-                "atproto" => {
+                "ATProto" => {
                     return atproto::handle_login(&req, kv_store, &config);
                 },
-                "fediverse" => {
+                "Fediverse" => {
                     return fediverse::handle_login(&req, kv_store, &config);
                 },
                 &_ => {

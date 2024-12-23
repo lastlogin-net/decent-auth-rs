@@ -2,15 +2,6 @@
 
 <h1>Login</h1>
 
-{{#config.oidc_providers}}
-<form action='{{prefix}}/login' method='POST'>
-  <input type='hidden' name='return_target' value='{{return_target}}' />
-  <input type='hidden' name='type' value='oidc' />
-  <input type='hidden' name='oidc_provider' value='{{uri}}' />
-  <button class='formbutton' type='submit'>Log in with {{name}}</button>
-</form>
-{{/config.oidc_providers}}
-
 <!-- TODO: re-implement logo support
 <form action='{{prefix}}/login' method='POST'>
   <input type='hidden' name='return_target' value='{{return_target}}' />
@@ -45,8 +36,16 @@
 <form action='{{prefix}}/login' method='POST'>
   <input type='hidden' name='return_target' value='{{return_target}}' />
   <input type='hidden' name='type' value='{{type}}' />
+  {{#uri}}
+  <input type='hidden' name='oidc_provider' value='{{uri}}' />
+  {{/uri}}
   <button class='formbutton' type='submit'>
+    {{#name}}
     <span>Log in with {{name}}</span>
+    {{/name}}
+    {{^name}}
+    <span>Log in with {{type}}</span>
+    {{/name}}
   </button>
 </form>
 {{/config.login_methods}}
