@@ -9,7 +9,7 @@ use axum::{
 };
 use axum_macros::debug_handler;
 
-use decentauth::{http,kv};
+use decentauth::{http,kv,LoginMethod};
 
 struct KvStore {
     map: Mutex<HashMap<String, Vec<u8>>>,
@@ -36,6 +36,29 @@ impl kv::Store for KvStore {
 
         Ok(())
     }
+
+    fn delete(&self, key: &str) -> Result<(), kv::Error> {
+        let mut map = self.map.lock().map_err(|_| kv::Error::new("Lock failed"))?;
+
+        map.remove(key);
+
+        Ok(())
+    }
+
+    fn list(&self, prefix: &str) -> Result<Vec<String>, kv::Error> {
+
+        let map = self.map.lock().map_err(|_| kv::Error::new("Lock failed"))?;
+
+        let keys = map.iter()
+        .filter(|(k,_v)| {
+            k.starts_with(prefix)
+        })
+        .map(|(k,_v)| {
+            k.clone()
+        }).collect::<Vec<String>>();
+
+        Ok(keys)
+    }
 }
 
 struct AppState {
@@ -58,6 +81,17 @@ async fn main() {
         path_prefix: path_prefix.to_string(),
         admin_id: Some(admin_id),
         id_header_name: None,
+        login_methods: vec![
+            LoginMethod{
+                name: "Admin Code".to_string(),
+                r#type: "admin-code".to_string(),
+            },
+            LoginMethod{
+                name: "Fediverse".to_string(),
+                r#type: "fediverse".to_string(),
+            },
+        ].into(),
+        oidc_providers: vec![].into(),
     };
 
     let kv_store = KvStore{
@@ -73,8 +107,8 @@ async fn main() {
     let app = Router::new()
         //.route("/", get(handler))
         .route("/", get(|| async { Redirect::temporary(path_prefix) }))
-        .route(&format!("{}", path_prefix), get(auth_handler))
-        .route(&format!("{}", path_prefix), post(auth_handler))
+        .route(&format!("{}/", path_prefix), get(auth_handler))
+        .route(&format!("{}/", path_prefix), post(auth_handler))
         .route(&format!("{}/*key", path_prefix), get(auth_handler))
         .route(&format!("{}/*key", path_prefix), post(auth_handler))
         .with_state(state);
