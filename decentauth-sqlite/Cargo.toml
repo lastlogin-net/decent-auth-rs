@@ -1,0 +1,8 @@
+[package]
+name = "decentauth-sqlite"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+decentauth = { path = "../" }
+rusqlite = "0.32.1"

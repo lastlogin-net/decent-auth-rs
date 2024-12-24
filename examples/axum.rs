@@ -1,4 +1,4 @@
-use std::{collections::HashMap,sync::{Arc,Mutex}};
+use std::sync::Arc;
 use axum::{
     response::{Response,Redirect},
     body::{Body,to_bytes},
@@ -9,57 +9,8 @@ use axum::{
 };
 use axum_macros::debug_handler;
 
-use decentauth::{http,kv,LoginMethod};
-
-struct KvStore {
-    map: Mutex<HashMap<String, Vec<u8>>>,
-}
-
-impl kv::Store for KvStore {
-    fn get(&self, key: &str) -> Result<Vec<u8>, kv::Error> {
-
-        let map = self.map.lock().map_err(|_| kv::Error::new("Lock failed"))?;
-
-        let value = &map.get(key).ok_or(kv::Error::new("Fail"))?;
-
-        //println!("kv get {}, {:?}", key, value);
-
-        Ok(value.to_vec())
-    }
-
-    fn set(&self, key: &str, value: Vec<u8>) -> Result<(), kv::Error> {
-        //println!("kv set {}, {:?}", key, value);
-
-        let mut map = self.map.lock().map_err(|_| kv::Error::new("Lock failed"))?;
-
-        map.insert(key.to_string(), value);
-
-        Ok(())
-    }
-
-    fn delete(&self, key: &str) -> Result<(), kv::Error> {
-        let mut map = self.map.lock().map_err(|_| kv::Error::new("Lock failed"))?;
-
-        map.remove(key);
-
-        Ok(())
-    }
-
-    fn list(&self, prefix: &str) -> Result<Vec<String>, kv::Error> {
-
-        let map = self.map.lock().map_err(|_| kv::Error::new("Lock failed"))?;
-
-        let keys = map.iter()
-            .filter(|(k,_v)| {
-                k.starts_with(prefix)
-            })
-            .map(|(k,_v)| {
-                k.clone()
-            }).collect::<Vec<String>>();
-
-        Ok(keys)
-    }
-}
+use decentauth::{http,LoginMethod};
+use decentauth_sqlite::KvStore;
 
 struct AppState {
     auth_server: decentauth::Server<KvStore>,
@@ -92,9 +43,7 @@ async fn main() {
         ].into(),
     };
 
-    let kv_store = KvStore{
-        map: Mutex::new(HashMap::new()),
-    };
+    let kv_store = KvStore::new().unwrap();
 
     let auth_server = decentauth::Server::new(config, kv_store);
 

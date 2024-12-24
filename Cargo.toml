@@ -1,3 +1,7 @@
+[workspace]
+
+[workspace.dependencies]
+
 [package]
 name = "decentauth"
 version = "0.1.0"
@@ -36,3 +40,4 @@ reqwest = "0.12.9"
 tokio = { version = "1.41.1", features = ["full"] }
 axum = "0.7.9"
 axum-macros = "0.4.2"
+decentauth-sqlite = { path = "./decentauth-sqlite" }
