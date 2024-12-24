@@ -4,10 +4,11 @@ use std::collections::{HashMap,BTreeMap};
 use std::{fmt};
 use cookie::{Cookie,SameSite,CookieBuilder,time::Duration};
 use openidconnect::{
-    HttpRequest,CsrfToken,
+    HttpRequest,
     http::{HeaderMap,HeaderValue,method::Method},
 };
 use chrono::{DateTime,Utc};
+use rand::distributions::{Alphanumeric, DistString};
 pub use server::Server;
 
 #[cfg(target_arch = "wasm32")]
@@ -421,7 +422,7 @@ fn handle<T>(req: DaHttpRequest, kv_store: &KvStore<T>, config: &Config) -> erro
 }
 
 fn generate_random_text() -> String {
-    CsrfToken::new_random().secret().to_string()
+    Alphanumeric.sample_string(&mut rand::thread_rng(), 32)
 }
 
 fn create_session_cookie<'a>(storage_prefix: &'a str, session_key: &'a str) -> CookieBuilder<'a> {

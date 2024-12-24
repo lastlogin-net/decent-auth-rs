@@ -6,7 +6,6 @@ use crate::{
     CommonTemplateData,get_session,DaHttpRequest,Config,KvStore,
     create_session_cookie,generate_random_text,
 };
-use openidconnect::CsrfToken;
 use crate::kv;
 
 pub fn handle_login<T: kv::Store>(req: &DaHttpRequest, kv_store: &KvStore<T>, params: &Params, config: &Config) -> error::Result<DaHttpResponse> {
@@ -50,7 +49,7 @@ pub fn handle_login<T: kv::Store>(req: &DaHttpRequest, kv_store: &KvStore<T>, pa
     }
     else {
 
-        let new_code = CsrfToken::new_random().secret().to_string();
+        let new_code = generate_random_text();
         let key = format!("/{}/{}/{}", config.storage_prefix, "pending_admin_codes", new_code);
         kv_store.set(&key, "fake-value")?;
 
