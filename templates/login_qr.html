@@ -1,0 +1,21 @@
+{{{header}}}
+
+<h1>QR Code Login</h1>
+
+<p>
+  Scan the QR code from a logged-in device:
+</p>
+
+<div>
+  {{{qr_svg}}}
+</div>
+
+<form action='{{prefix}}/login' method='POST'>
+  <input type='hidden' name='return_target' value='{{return_target}}' />
+  <input type='hidden' name='type' value='Qr Code' />
+  <button class='formbutton' type='submit'>
+    Continue
+  </button>
+</form>
+
+{{{footer}}}

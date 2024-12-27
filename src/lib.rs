@@ -19,6 +19,7 @@ pub use http;
 pub mod webfinger;
 mod error;
 mod admin_code;
+mod qr;
 mod oidc;
 mod atproto;
 mod fediverse;
@@ -54,6 +55,8 @@ pub enum LoginMethod {
     Fediverse,
     #[serde(rename = "Admin Code")]
     AdminCode,
+    #[serde(rename = "QR Code")]
+    QrCode,
     #[serde(rename = "OIDC")]
     Oidc {
         name: String,
@@ -363,6 +366,9 @@ fn handle<T>(req: DaHttpRequest, kv_store: &KvStore<T>, config: &Config) -> erro
                         return Ok(DaHttpResponse::new(400, "Missing OIDC provider"));
                     }
                 },
+                "QR Code" => {
+                    return qr::handle_login(&req, kv_store, config);
+                },
                 "Admin Code" => {
                     return admin_code::handle_login(&req, kv_store, &params, config);
                 },
@@ -383,6 +389,9 @@ fn handle<T>(req: DaHttpRequest, kv_store: &KvStore<T>, config: &Config) -> erro
         }
 
         DaHttpResponse::new(200, "")
+    }
+    else if path.starts_with(&format!("{}/qr", path_prefix)) {
+        qr::handle_callback(&req, kv_store, &config)?
     }
     else if path == format!("{}/atproto-client-metadata.json", path_prefix) {
         atproto::handle_client_metadata(&req, kv_store, &config)?
