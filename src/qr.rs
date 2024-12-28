@@ -111,7 +111,9 @@ pub fn handle<T: kv::Store>(req: &DaHttpRequest, kv_store: &KvStore<T>, config: 
         let session = get_session(&req, &kv_store, config);
         if session.is_none() {
             let mut res = DaHttpResponse::new(303, "");
-            let uri = format!("{}?return_target={}?key={}", config.path_prefix, path, qr_key);
+            let ret = &format!("{}?key={}", path, qr_key);
+            let ret = urlencoding::encode(ret);
+            let uri = format!("{}?return_target={}", config.path_prefix, ret);
             res.headers = BTreeMap::from([
                 ("Location".to_string(), vec![uri]),
             ]);
