@@ -101,10 +101,21 @@ pub fn handle<T: kv::Store>(req: &DaHttpRequest, kv_store: &KvStore<T>, config: 
 
     if path == &format!("{}/qr", config.path_prefix) {
 
+        let qr_key = if let Some(key) = params.get("key") {
+            key
+        }
+        else {
+            return Ok(DaHttpResponse::new(400, &format!("Missing key param")));
+        };
+
         let session = get_session(&req, &kv_store, config);
         if session.is_none() {
-            // TODO: redirect for login
-            return Ok(DaHttpResponse::new(400, &format!("Not logged in")));
+            let mut res = DaHttpResponse::new(303, "");
+            let uri = format!("{}?return_target={}?key={}", config.path_prefix, path, qr_key);
+            res.headers = BTreeMap::from([
+                ("Location".to_string(), vec![uri]),
+            ]);
+            return Ok(res);
         }
 
         let qr_key = if let Some(key) = params.get("key") {
