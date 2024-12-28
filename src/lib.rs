@@ -391,7 +391,7 @@ fn handle<T>(req: DaHttpRequest, kv_store: &KvStore<T>, config: &Config) -> erro
         DaHttpResponse::new(200, "")
     }
     else if path.starts_with(&format!("{}/qr", path_prefix)) {
-        qr::handle_callback(&req, kv_store, &config)?
+        qr::handle(&req, kv_store, &config)?
     }
     else if path == format!("{}/atproto-client-metadata.json", path_prefix) {
         atproto::handle_client_metadata(&req, kv_store, &config)?

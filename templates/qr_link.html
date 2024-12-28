@@ -2,18 +2,10 @@
 
 <h1>QR Code Login</h1>
 
-<p>
-  Scan the QR code from a logged-in device:
-</p>
-
-<div>
-  {{{qr_svg}}}
-</div>
-
-<form action='{{prefix}}/qr/finalize' method='POST'>
+<form action='{{prefix}}/qr/approve' method='POST'>
   <input type='hidden' name='key' value='{{qr_key}}' />
   <button class='formbutton' type='submit'>
-    Continue
+    Confirm
   </button>
 </form>
 
