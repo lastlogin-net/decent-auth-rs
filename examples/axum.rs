@@ -38,6 +38,7 @@ async fn main() {
                 name: "LastLogin".to_string(),
             },
             LoginMethod::AdminCode,
+            LoginMethod::QrCode,
             LoginMethod::AtProto,
             LoginMethod::Fediverse,
         ].into(),
