@@ -3,9 +3,8 @@ use axum::{
     response::{Response,Redirect},
     body::{Body,to_bytes},
     extract::{State,Request},
-    routing::{get,post},
+    routing::{get,any},
     Router,
-    //http::header::HeaderMap,
 };
 use axum_macros::debug_handler;
 
@@ -53,28 +52,15 @@ async fn main() {
     });
 
     let app = Router::new()
-        //.route("/", get(handler))
         .route("/", get(|| async { Redirect::temporary(path_prefix) }))
-        .route(&format!("{}", path_prefix), get(auth_handler))
-        .route(&format!("{}", path_prefix), post(auth_handler))
-        .route(&format!("{}/", path_prefix), get(auth_handler))
-        .route(&format!("{}/", path_prefix), post(auth_handler))
-        .route(&format!("{}/*key", path_prefix), get(auth_handler))
-        .route(&format!("{}/*key", path_prefix), post(auth_handler))
+        .route(&format!("{}", path_prefix), any(auth_handler))
+        .route(&format!("{}/", path_prefix), any(auth_handler))
+        .route(&format!("{}/*key", path_prefix), any(auth_handler))
         .with_state(state);
 
     let listener = tokio::net::TcpListener::bind("0.0.0.0:3000").await.unwrap();
     axum::serve(listener, app).await.unwrap();
 }
-
-//async fn handler(headers: HeaderMap, State(state): State<SharedState>) -> &'static str {
-//
-//    let session = state.auth_server.get_session(&headers);
-//
-//    dbg!(session);
-//
-//    "Hi there"
-//}
 
 #[debug_handler]
 async fn auth_handler(State(state): State<SharedState>, req: Request) -> Response<Body> {
