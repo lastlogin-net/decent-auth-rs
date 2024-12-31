@@ -2,7 +2,7 @@ use crate::{
     DaHttpRequest,DaHttpResponse,error,kv,KvStore,Config,HEADER_TMPL,
     FOOTER_TMPL,get_return_target,get_session,
     Session,SessionBuilder,DaError,generate_random_text,parse_params,
-    create_session_cookie,SESSION_PREFIX,
+    create_session_cookie,SESSION_PREFIX,CommonTemplateData,
 };
 use url::Url;
 use std::collections::{HashMap,BTreeMap};
@@ -12,6 +12,7 @@ use serde::{Serialize,Deserialize};
 
 const LOGIN_QR_CODE_TMPL: &str = include_str!("../templates/login_qr.html");
 const QR_LINK_TMPL: &str = include_str!("../templates/qr_link.html");
+const QR_APPROVED_TMPL: &str = include_str!("../templates/qr_approved.html");
 
 #[derive(Serialize)]
 struct QrTemplateData<'a>{
@@ -167,7 +168,23 @@ pub fn handle<T: kv::Store>(req: &DaHttpRequest, kv_store: &KvStore<T>, config: 
 
         kv_store.set(&storage_key, state)?;
 
-        return Ok(DaHttpResponse::new(200, "Approved"));
+        let data = CommonTemplateData{ 
+            config,
+            header: HEADER_TMPL,
+            footer: FOOTER_TMPL,
+            session: None,
+            prefix: config.path_prefix.to_string(),
+            return_target: get_return_target(&req),
+        };
+
+        let template = mustache::compile_str(QR_APPROVED_TMPL)?;
+        let body = template.render_to_string(&data)?;
+        let mut res = DaHttpResponse::new(200, &body);
+        res.headers = BTreeMap::from([
+            ("Content-Type".to_string(), vec!["text/html".to_string()]),
+        ]);
+
+        return Ok(res);
     }
     else if path == &format!("{}/qr/finalize", config.path_prefix) {
 
