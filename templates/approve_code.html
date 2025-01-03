@@ -1,0 +1,14 @@
+{{{header}}}
+
+<h1>Code Login</h1>
+
+<form action='{{prefix}}/login' method='POST'>
+  <input type='hidden' name='return_target' value='{{return_target}}' />
+  <input type='hidden' name='type' value='Email' />
+  <input type='text' name='code' placeholder='Enter the code we sent you' />
+  <button class='formbutton' type='submit'>
+    Complete Login
+  </button>
+</form>
+
+{{{footer}}}

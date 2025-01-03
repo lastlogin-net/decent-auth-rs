@@ -1,0 +1,14 @@
+{{{header}}}
+
+<h1>Email Login</h1>
+
+<form action='{{prefix}}/login' method='POST'>
+  <input type='hidden' name='return_target' value='{{return_target}}' />
+  <input type='hidden' name='type' value='Email' />
+  <input type='email' name='email' placeholder='Email address' />
+  <button class='formbutton' type='submit'>
+    Log in with Email
+  </button>
+</form>
+
+{{{footer}}}

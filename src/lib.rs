@@ -27,6 +27,7 @@ pub mod kv;
 mod server;
 #[cfg(target_arch = "wasm32")]
 mod wasm;
+mod email;
 
 #[derive(Debug,Serialize,Deserialize)]
 pub struct Config {
@@ -37,6 +38,7 @@ pub struct Config {
     pub admin_id: Option<String>,
     pub id_header_name: Option<String>,
     pub login_methods: Option<Vec<LoginMethod>>,
+    pub smtp_config: Option<email::SmtpConfig>,
 }
 
 fn default_storage_prefix() -> String {
@@ -62,6 +64,8 @@ pub enum LoginMethod {
         name: String,
         uri: String,
     },
+    #[serde(rename = "Email")]
+    Email,
 }
 
 impl From<serde_json::Error> for kv::Error {
@@ -378,6 +382,9 @@ fn handle<T>(req: DaHttpRequest, kv_store: &KvStore<T>, config: &Config) -> erro
                 "Fediverse" => {
                     return fediverse::handle_login(&req, kv_store, &config);
                 },
+                "Email" => {
+                    return email::handle_login(&req, kv_store, &config);
+                },
                 &_ => {
                     return Ok(DaHttpResponse::new(400, "Invalid login type"))
                 },
@@ -432,6 +439,10 @@ fn handle<T>(req: DaHttpRequest, kv_store: &KvStore<T>, config: &Config) -> erro
 
 fn generate_random_text() -> String {
     Alphanumeric.sample_string(&mut rand::thread_rng(), 32)
+}
+
+fn generate_random_key(length: usize) -> String {
+    Alphanumeric.sample_string(&mut rand::thread_rng(), length)
 }
 
 fn create_session_cookie<'a>(storage_prefix: &'a str, session_key: &'a str) -> CookieBuilder<'a> {
