@@ -12,13 +12,13 @@ use crate::{
 const LOGIN_EMAIL_TMPL: &str = include_str!("../templates/login_email.html");
 const APPROVE_CODE_TMPL: &str = include_str!("../templates/approve_code.html");
 
-#[derive(Debug,Serialize,Deserialize)]
+#[derive(Debug,Clone,Serialize,Deserialize)]
 pub struct SmtpConfig {
-    server_address: String,
-    server_port: u16,
-    username: String,
-    password: String,
-    sender_email: String,
+    pub server_address: String,
+    pub server_port: u16,
+    pub username: String,
+    pub password: String,
+    pub sender_email: String,
 }
 
 #[derive(Debug,Serialize,Deserialize)]
@@ -36,9 +36,37 @@ extern "ExtismHost" {
 }
 
 #[cfg(target_arch = "wasm32")]
-pub fn send_email(msg: Message) {
+pub fn send_email(msg: Message, _smtp_config: &SmtpConfig) {
     let json = serde_json::to_string(&msg).expect("to json");
     unsafe { extism_send_email(&json).expect("extism_send_email") };
+}
+
+#[cfg(not(target_arch = "wasm32"))]
+pub fn send_email(msg: Message, smtp_config: &SmtpConfig) {
+    use lettre::message::header::ContentType;
+    use lettre::transport::smtp::authentication::Credentials;
+    use lettre::{SmtpTransport, Transport};
+
+    let smtp_config = smtp_config.clone();
+
+    std::thread::spawn(move || {
+        let creds = Credentials::new(smtp_config.username.clone(), smtp_config.password.clone());
+
+        let email = lettre::Message::builder()
+            .from(msg.from.parse().unwrap())
+            .to(msg.to.parse().unwrap())
+            .subject(msg.subject)
+            .header(ContentType::TEXT_PLAIN)
+            .body(msg.text)
+            .unwrap();
+
+        let mailer = SmtpTransport::relay(&smtp_config.server_address)
+            .unwrap()
+            .credentials(creds)
+            .build();
+
+        let _ = mailer.send(&email);
+    });
 }
 
 
@@ -63,12 +91,14 @@ where T: kv::Store,
             let key = format!("/{}/{}/{}", config.storage_prefix, "pending_code_login", code);
             kv_store.set(&key, session)?;
 
-            email::send_email(email::Message{
+            let msg = email::Message{
                 from: format!("\"{} email validator\" <{}>", host, smtp_config.sender_email),
                 to: email_address.to_string(),
                 subject: format!("Email validation from {}", host),
                 text: format!("This is an email validation request from {}. Use the code below to prove you control {}:\n\n{}", host, email_address, display_code),
-            });
+            };
+
+            email::send_email(msg, &smtp_config);
         }
         else {
             return Ok(DaHttpResponse::new(400, "No SMTP config"));

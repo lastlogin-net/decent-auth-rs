@@ -10,6 +10,7 @@ use openidconnect::{
 use chrono::{DateTime,Utc};
 use rand::distributions::{Alphanumeric, DistString};
 pub use server::Server;
+pub use email::SmtpConfig;
 
 #[cfg(target_arch = "wasm32")]
 use wasm::http_client;

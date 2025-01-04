@@ -8,7 +8,7 @@ use axum::{
 };
 use axum_macros::debug_handler;
 
-use decentauth::{http,LoginMethod};
+use decentauth::{http,LoginMethod,SmtpConfig};
 use decentauth_sqlite::KvStore;
 
 struct AppState {
@@ -40,7 +40,15 @@ async fn main() {
             LoginMethod::QrCode,
             LoginMethod::AtProto,
             LoginMethod::Fediverse,
+            LoginMethod::Email,
         ].into(),
+        smtp_config: Some(SmtpConfig{
+            server_address: args[2].clone(),
+            server_port: args[3].parse::<u16>().expect("Failed to parse port"),
+            username: args[4].clone(),
+            password: args[5].clone(),
+            sender_email: args[6].clone(),
+        }),
     };
 
     let kv_store = KvStore::new().unwrap();

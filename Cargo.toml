@@ -38,6 +38,7 @@ tokio = { version = "1.41.1", features = ["rt"] }
 [target.'cfg(not(target_arch = "wasm32"))'.dependencies]
 tokio = { version = "1.41.1", features = ["full"] }
 reqwest = "0.12.9"
+lettre = { version = "0.11.11", default-features = false, features = ["builder", "smtp-transport", "rustls-tls"] }
 
 [dev-dependencies]
 tokio = { version = "1.41.1", features = ["full"] }
