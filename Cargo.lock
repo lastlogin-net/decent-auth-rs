@@ -628,6 +628,7 @@ dependencies = [
  "http 1.1.0",
  "lettre",
  "mustache",
+ "oauth2",
  "openidconnect",
  "qrcode",
  "rand",

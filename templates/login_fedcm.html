@@ -1,0 +1,43 @@
+{{{header}}}
+
+<h1>Login with FedCM</h1>
+
+<form id='fedcm-login-form' action="{{prefix}}/login" method="POST">
+  <input type='hidden' name='return_target' value='{{return_target}}' />
+  <input type='hidden' name='pkce_code_verifier' value='{{pkce_code_verifier}}' />
+  <input type='hidden' name='type' value='FedCM' />
+  <input type="hidden" id='fedcm-token-input' name="token" required>
+</form>
+
+<script type='module'>
+
+  const identityCredential = await navigator.credentials.get({
+    identity: {
+      context: "signin",
+      providers: [
+        {
+          configURL: 'any',
+          type: "indieauth",
+          clientId: window.location.origin,
+          params: {
+            code_challenge: "{{pkce_code_challenge}}",
+            code_challenge_method: "S256",
+          },
+        },
+      ]
+    },
+  }).catch(e => {
+    console.log("Error", e.message);
+  });
+
+  console.log(identityCredential);
+
+  const form = document.getElementById('fedcm-login-form');
+  const tokenEl = document.getElementById('fedcm-token-input');
+  tokenEl.value = identityCredential.token;
+  form.submit();
+
+</script>
+
+
+{{{footer}}}

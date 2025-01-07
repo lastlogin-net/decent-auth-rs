@@ -29,6 +29,7 @@ mod server;
 #[cfg(target_arch = "wasm32")]
 mod wasm;
 mod email;
+mod fedcm;
 
 #[derive(Debug,Serialize,Deserialize)]
 pub struct Config {
@@ -67,6 +68,7 @@ pub enum LoginMethod {
     },
     #[serde(rename = "Email")]
     Email,
+    FedCM,
 }
 
 impl From<serde_json::Error> for kv::Error {
@@ -385,6 +387,9 @@ fn handle<T>(req: DaHttpRequest, kv_store: &KvStore<T>, config: &Config) -> erro
                 },
                 "Email" => {
                     return email::handle_login(&req, kv_store, &config);
+                },
+                "FedCM" => {
+                    return fedcm::handle_login(&req, kv_store, &config);
                 },
                 &_ => {
                     return Ok(DaHttpResponse::new(400, "Invalid login type"))

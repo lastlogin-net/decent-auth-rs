@@ -113,7 +113,7 @@ fn get_client(provider_url: &str, path_prefix: &str, parsed_url: &Url) -> error:
     let provider_metadata = CoreProviderMetadata::discover(
         &IssuerUrl::new(provider_url.to_string())?,
         http_client,
-    ).expect("meta failed");
+    )?;
 
     let host = parsed_url.host().ok_or(DaError::new("Missing host"))?;
 
