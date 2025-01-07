@@ -68,7 +68,8 @@ pub enum LoginMethod {
     },
     #[serde(rename = "Email")]
     Email,
-    FedCM,
+    #[serde(rename = "FedCM")]
+    FedCm,
 }
 
 impl From<serde_json::Error> for kv::Error {

@@ -41,6 +41,7 @@ async fn main() {
             LoginMethod::AtProto,
             LoginMethod::Fediverse,
             LoginMethod::Email,
+            LoginMethod::FedCm,
         ].into(),
         smtp_config: Some(SmtpConfig{
             server_address: args[2].clone(),
