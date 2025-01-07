@@ -22,7 +22,8 @@ async fn main() {
 
     let args: Vec<String> = std::env::args().collect();
 
-    let admin_id = args[1].clone();
+    let port = args[1].clone();
+    let admin_id = args[2].clone();
 
     let path_prefix = "/auth";
 
@@ -36,19 +37,19 @@ async fn main() {
                 uri: "https://lastlogin.net".to_string(),
                 name: "LastLogin".to_string(),
             },
-            LoginMethod::AdminCode,
             LoginMethod::QrCode,
             LoginMethod::AtProto,
             LoginMethod::Fediverse,
             LoginMethod::Email,
             LoginMethod::FedCm,
+            LoginMethod::AdminCode,
         ].into(),
         smtp_config: Some(SmtpConfig{
-            server_address: args[2].clone(),
-            server_port: args[3].parse::<u16>().expect("Failed to parse port"),
-            username: args[4].clone(),
-            password: args[5].clone(),
-            sender_email: args[6].clone(),
+            server_address: args[3].clone(),
+            server_port: args[4].parse::<u16>().expect("Failed to parse port"),
+            username: args[5].clone(),
+            password: args[6].clone(),
+            sender_email: args[7].clone(),
         }),
     };
 
@@ -67,7 +68,8 @@ async fn main() {
         .route(&format!("{}/*key", path_prefix), any(auth_handler))
         .with_state(state);
 
-    let listener = tokio::net::TcpListener::bind("0.0.0.0:3000").await.unwrap();
+    let addr = format!("0.0.0.0:{}", port);
+    let listener = tokio::net::TcpListener::bind(addr).await.unwrap();
     axum::serve(listener, app).await.unwrap();
 }
 
