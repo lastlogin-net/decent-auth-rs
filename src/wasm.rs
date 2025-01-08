@@ -98,6 +98,7 @@ pub fn http_client(req: HttpRequest) -> std::result::Result<HttpResponse, DaErro
 fn get_config() -> error::Result<Config> {
     let config_json = extism_pdk::config::get("config")?.ok_or(DaError::new("Missing config"))?;
     let config = serde_json::from_str(&config_json)?;
+    //println!("{:?}", config);
     Ok(config)
 }
 

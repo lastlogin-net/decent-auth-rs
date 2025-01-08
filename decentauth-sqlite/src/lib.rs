@@ -14,9 +14,9 @@ pub struct KvStore {
 
 impl KvStore {
 
-    pub fn new() -> Result<Self, Error> {
+    pub fn new(path: &str) -> Result<Self, Error> {
 
-        let db = rusqlite::Connection::open("db.sqlite")
+        let db = rusqlite::Connection::open(path)
             .map_err(|e| Error::new(&e.to_string()))?;
 
         let table_name = "kv";

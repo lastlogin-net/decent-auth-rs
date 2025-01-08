@@ -23,11 +23,13 @@ async fn main() {
     let args: Vec<String> = std::env::args().collect();
 
     let port = args[1].clone();
-    let admin_id = args[2].clone();
+    let db_path = args[2].clone();
+    let admin_id = args[3].clone();
 
     let path_prefix = "/auth";
 
     let config = decentauth::Config{
+        runtime: "Rust".to_string(),
         storage_prefix: "decent_auth".to_string(),
         path_prefix: path_prefix.to_string(),
         admin_id: Some(admin_id),
@@ -45,15 +47,15 @@ async fn main() {
             LoginMethod::AdminCode,
         ].into(),
         smtp_config: Some(SmtpConfig{
-            server_address: args[3].clone(),
-            server_port: args[4].parse::<u16>().expect("Failed to parse port"),
-            username: args[5].clone(),
-            password: args[6].clone(),
-            sender_email: args[7].clone(),
+            server_address: args[4].clone(),
+            server_port: args[5].parse::<u16>().expect("Failed to parse port"),
+            username: args[6].clone(),
+            password: args[7].clone(),
+            sender_email: args[8].clone(),
         }),
     };
 
-    let kv_store = KvStore::new().unwrap();
+    let kv_store = KvStore::new(&db_path).unwrap();
 
     let auth_server = decentauth::Server::new(config, kv_store);
 

@@ -41,6 +41,7 @@ pub struct Config {
     pub id_header_name: Option<String>,
     pub login_methods: Option<Vec<LoginMethod>>,
     pub smtp_config: Option<email::SmtpConfig>,
+    pub runtime: Option<String>,
 }
 
 fn default_storage_prefix() -> String {

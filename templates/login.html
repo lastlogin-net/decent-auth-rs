@@ -32,6 +32,10 @@
 </form>
 -->
 
+{{#config.runtime}}
+<h1>Served from {{config.runtime}} backend</h1>
+{{/config.runtime}}
+
 {{#config.login_methods}}
 <form action='{{prefix}}/login' method='POST'>
   <input type='hidden' name='return_target' value='{{return_target}}' />
