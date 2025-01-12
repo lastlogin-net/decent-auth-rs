@@ -1,14 +1,19 @@
-{{{header}}}
+{{> header.html}}
 
 <h1>Fediverse Login</h1>
 
-<form action='{{prefix}}/login' method='POST'>
+<form action='{{path_prefix}}/login' method='POST'>
   <input type='hidden' name='return_target' value='{{return_target}}' />
-  <input type='hidden' name='type' value='Fediverse' />
+  <input type='hidden' name='type' value='{{method_type}}' />
   <input type='text' name='handle' placeholder='Fediverse handle' />
   <button class='formbutton' type='submit'>
-    Log in with Fediverse Handle
+    {{#name}}
+    <span>Log in with {{name}}</span>
+    {{/name}}
+    {{^name}}
+    <span>Log in with {{method_type}}</span>
+    {{/name}}
   </button>
 </form>
 
-{{{footer}}}
+{{> footer.html}}

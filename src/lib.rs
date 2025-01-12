@@ -11,6 +11,7 @@ use chrono::{DateTime,Utc};
 use rand::distributions::{Alphanumeric, DistString};
 pub use server::Server;
 pub use email::SmtpConfig;
+use template::Templater;
 
 #[cfg(target_arch = "wasm32")]
 use wasm::http_client;
@@ -30,6 +31,7 @@ mod server;
 mod wasm;
 mod email;
 mod fedcm;
+mod template;
 
 #[derive(Debug,Serialize,Deserialize)]
 pub struct Config {
@@ -52,7 +54,15 @@ fn default_path_prefix() -> String {
     "/decent-auth".to_string()
 }
 
-#[derive(Debug,Serialize,Deserialize)]
+const ATPROTO_STR: &str = "ATProto";
+const FEDIVERSE_STR: &str = "Fediverse";
+const ADMIN_CODE_STR: &str = "Admin Code";
+const QR_CODE_STR: &str = "QR Code";
+const OIDC_STR: &str = "OIDC";
+const EMAIL_STR: &str = "Email";
+const FEDCM_STR: &str = "FedCM";
+
+#[derive(Clone,Debug,Serialize,Deserialize)]
 #[serde(tag = "type")]
 pub enum LoginMethod {
     #[serde(rename = "ATProto")]
@@ -110,10 +120,7 @@ const OAUTH_STATE_PREFIX: &str = "oauth_state";
 
 const HEADER_TMPL: &str = include_str!("../templates/header.html");
 const FOOTER_TMPL: &str = include_str!("../templates/footer.html");
-const INDEX_TMPL: &str = include_str!("../templates/index.html");
-const LOGIN_TMPL: &str = include_str!("../templates/login.html");
 const LOGIN_ADMIN_CODE_TMPL: &str = include_str!("../templates/login_admin_code.html");
-const LOGIN_FEDIVERSE_TMPL: &str = include_str!("../templates/login_fediverse.html");
 
 #[derive(Serialize)]
 struct CommonTemplateData<'a>{
@@ -321,7 +328,7 @@ fn parse_params(req: &DaHttpRequest) -> Option<Params> {
     None
 }
 
-fn handle<T>(req: DaHttpRequest, kv_store: &KvStore<T>, config: &Config) -> error::Result<DaHttpResponse> 
+fn handle<T>(req: DaHttpRequest, kv_store: &KvStore<T>, config: &Config, templater: &Templater) -> error::Result<DaHttpResponse> 
     where T: kv::Store
 {
     let path_prefix = &config.path_prefix;
@@ -333,23 +340,27 @@ fn handle<T>(req: DaHttpRequest, kv_store: &KvStore<T>, config: &Config) -> erro
 
     let path = parsed_url.path();
 
-    let res = if path == path_prefix || path == format!("{}/", path_prefix) {
+    let res = if path == path_prefix || path == format!("{}/", path_prefix) { 
 
-        let template_str = match session {
-            Some(ref _session) => INDEX_TMPL,
-            None => LOGIN_TMPL,
+        let body = match session {
+            Some(session) => {
+                let data = template::IndexPageData{
+                    config,
+                    return_target: get_return_target(&req),
+                    id: session.id,
+                };
+                let body = templater.render_index_page(&data)?;
+                body
+            },
+            None => {
+                let data = template::CommonData{
+                    config,
+                    return_target: get_return_target(&req),
+                };
+                let body = templater.render_login_page(&data)?;
+                body
+            }
         };
-
-        let template = mustache::compile_str(template_str)?;
-        let data = CommonTemplateData{ 
-            config,
-            header: HEADER_TMPL,
-            footer: FOOTER_TMPL,
-            session,
-            prefix: path_prefix.to_string(),
-            return_target: get_return_target(&req),
-        };
-        let body = template.render_to_string(&data)?;
 
         let mut res = DaHttpResponse::new(200, &body);
         res.headers = BTreeMap::from([
@@ -366,7 +377,7 @@ fn handle<T>(req: DaHttpRequest, kv_store: &KvStore<T>, config: &Config) -> erro
         if let Some(login_type) = login_type {
             match login_type.as_str() {
                 // TODO: see if we can use actual enum for this
-                "OIDC" => {
+                OIDC_STR => {
                     let oidc_provider = params.get("oidc_provider");
                     if let Some(oidc_provider) = oidc_provider {
                         return oidc::handle_login(&req, kv_store, &storage_prefix, &path_prefix, &oidc_provider);
@@ -375,22 +386,22 @@ fn handle<T>(req: DaHttpRequest, kv_store: &KvStore<T>, config: &Config) -> erro
                         return Ok(DaHttpResponse::new(400, "Missing OIDC provider"));
                     }
                 },
-                "QR Code" => {
+                QR_CODE_STR => {
                     return qr::handle_login(&req, kv_store, config);
                 },
-                "Admin Code" => {
+                ADMIN_CODE_STR => {
                     return admin_code::handle_login(&req, kv_store, &params, config);
                 },
-                "ATProto" => {
-                    return atproto::handle_login(&req, kv_store, &config);
+                ATPROTO_STR => {
+                    return atproto::handle_login(&req, kv_store, &config, templater);
                 },
-                "Fediverse" => {
-                    return fediverse::handle_login(&req, kv_store, &config);
+                FEDIVERSE_STR => {
+                    return fediverse::handle_login(&req, kv_store, &config, templater);
                 },
-                "Email" => {
+                EMAIL_STR => {
                     return email::handle_login(&req, kv_store, &config);
                 },
-                "FedCM" => {
+                FEDCM_STR => {
                     return fedcm::handle_login(&req, kv_store, &config);
                 },
                 &_ => {

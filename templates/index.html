@@ -1,15 +1,10 @@
-{{{header}}}
+{{> header.html}}
 
-{{#config.runtime}}
-<h1>Served from {{config.runtime}} backend</h1>
-{{/config.runtime}}
-
-{{#session}}
 <p>
   Signed in as {{id}}
 </p>
-<form action='{{prefix}}/logout' method='POST'>
+<form action='{{path_prefix}}/logout' method='POST'>
   <button class='formbutton' type='submit'>Logout</button>
 </form>
-{{/session}}
-{{{footer}}}
+
+{{> footer.html}}

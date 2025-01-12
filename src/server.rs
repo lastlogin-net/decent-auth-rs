@@ -1,11 +1,12 @@
 use crate::{
     handle,DaHttpRequest,BTreeMap,get_session,Session,KvStore,
-    Config,kv,
+    Config,kv,template::Templater,
 };
 
 pub struct Server<T: kv::Store> {
     pub config: Config,
     kv_store: KvStore<T>,
+    templater: Templater,
 }
 
 impl<T: kv::Store> Server<T> {
@@ -15,6 +16,7 @@ impl<T: kv::Store> Server<T> {
             kv_store: KvStore{
                 byte_kv: kv_store,
             },
+            templater: Templater::new(),
         }
     }
 
@@ -73,7 +75,7 @@ impl<T: kv::Store> Server<T> {
             body: body.to_string(),
         };
 
-        let da_res = match handle(da_req, &self.kv_store, &self.config) {
+        let da_res = match handle(da_req, &self.kv_store, &self.config, &self.templater) {
             Ok(da_res) => da_res,
             Err(e) => {
                 let mut res = http::Response::new(bytes::Bytes::from(e.to_string()));

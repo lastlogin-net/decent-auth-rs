@@ -3,8 +3,9 @@ use crate::{
     error,DaHttpResponse,Method,HeaderMap,HeaderValue,
     HttpRequest,Url,Serialize,Deserialize,DaError,KvStore,Config,kv,
     parse_params,DaHttpRequest,generate_random_text,SessionBuilder,IdType,
-    SESSION_PREFIX,get_return_target,HEADER_TMPL,FOOTER_TMPL,
-    CommonTemplateData,LOGIN_FEDIVERSE_TMPL,get_session,create_session_cookie,
+    SESSION_PREFIX,get_return_target,
+    create_session_cookie,
+    template,Templater
 };
 
 #[cfg(target_arch = "wasm32")]
@@ -40,7 +41,7 @@ struct CredentialsResponse {
     username: String,
 }
 
-pub fn handle_login<T: kv::Store>(req: &DaHttpRequest, kv_store: &KvStore<T>, config: &Config) -> error::Result<DaHttpResponse> {
+pub fn handle_login<T: kv::Store>(req: &DaHttpRequest, kv_store: &KvStore<T>, config: &Config, templater: &Templater) -> error::Result<DaHttpResponse> {
 
     let parsed_url = Url::parse(&req.url)?; 
     let params = parse_params(&req).unwrap_or(HashMap::new());
@@ -127,19 +128,11 @@ pub fn handle_login<T: kv::Store>(req: &DaHttpRequest, kv_store: &KvStore<T>, co
         return Ok(res);
     }
     else {
-
-        let session = get_session(&req, &kv_store, config);
-
-        let template = mustache::compile_str(LOGIN_FEDIVERSE_TMPL)?;
-        let data = CommonTemplateData{ 
+        let data = template::CommonData{
             config,
-            header: HEADER_TMPL,
-            footer: FOOTER_TMPL,
-            session,
-            prefix: config.path_prefix.to_string(),
             return_target: get_return_target(&req),
         };
-        let body = template.render_to_string(&data)?;
+        let body = templater.render_fediverse_page(&data)?;
 
         let mut res = DaHttpResponse::new(200, &body);
         res.headers = BTreeMap::from([

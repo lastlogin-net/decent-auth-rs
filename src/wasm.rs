@@ -1,6 +1,6 @@
 use crate::{
     KvStore,get_session,DaError,Session,handle,DaHttpRequest,DaHttpResponse,
-    Config,error,kv,
+    Config,error,kv,template::Templater,
 };
 use openidconnect::{
     HttpRequest,HttpResponse,
@@ -112,7 +112,11 @@ pub extern "C" fn extism_handle(Json(req): Json<DaHttpRequest>) -> FnResult<Json
         byte_kv: ExtismKv{},
     };
 
-    let result = handle(req, &kv_store, &config);
+    // TODO: share memory between invocations so we don't have to create a new templater from
+    // scratch every time.
+    let templater = Templater::new();
+
+    let result = handle(req, &kv_store, &config, &templater);
 
     if let Ok(res) = result {
         Ok(Json(res))

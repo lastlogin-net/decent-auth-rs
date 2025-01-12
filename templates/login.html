@@ -1,4 +1,4 @@
-{{{header}}}
+{{> header.html}}
 
 <h1>Login</h1>
 
@@ -32,14 +32,10 @@
 </form>
 -->
 
-{{#config.runtime}}
-<h1>Served from {{config.runtime}} backend</h1>
-{{/config.runtime}}
-
-{{#config.login_methods}}
-<form action='{{prefix}}/login' method='POST'>
+{{#login_methods}}
+<form action='{{path_prefix}}/login' method='POST'>
   <input type='hidden' name='return_target' value='{{return_target}}' />
-  <input type='hidden' name='type' value='{{type}}' />
+  <input type='hidden' name='type' value='{{method_type}}' />
   {{#uri}}
   <input type='hidden' name='oidc_provider' value='{{uri}}' />
   {{/uri}}
@@ -48,11 +44,11 @@
     <span>Log in with {{name}}</span>
     {{/name}}
     {{^name}}
-    <span>Log in with {{type}}</span>
+    <span>Log in with {{method_type}}</span>
     {{/name}}
   </button>
 </form>
-{{/config.login_methods}}
+{{/login_methods}}
 
 
-{{{footer}}}
+{{> footer.html}}

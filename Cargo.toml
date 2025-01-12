@@ -32,6 +32,8 @@ rand = "0.8.5"
 qrcode = "0.14.1"
 urlencoding = "2.1.3"
 oauth2 = "4.4.2"
+#ramhorns = "1.0.1"
+ramhorns = { path = "../ramhorns/ramhorns" }
 
 [target.'cfg(target_arch = "wasm32")'.dependencies]
 tokio = { version = "1.41.1", features = ["rt"] }

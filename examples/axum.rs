@@ -29,7 +29,7 @@ async fn main() {
     let path_prefix = "/auth";
 
     let config = decentauth::Config{
-        runtime: "Rust".to_string(),
+        runtime: Some("Rust".to_string()),
         storage_prefix: "decent_auth".to_string(),
         path_prefix: path_prefix.to_string(),
         admin_id: Some(admin_id),

@@ -2,9 +2,8 @@ use std::collections::{HashMap,BTreeMap};
 use std::sync::Arc;
 use crate::{
     DaHttpRequest,DaHttpResponse,KvStore,Config,error,kv,Url,DaError,
-    parse_params,Session,SESSION_PREFIX,generate_random_text,HEADER_TMPL,
-    FOOTER_TMPL,get_return_target,get_session,CommonTemplateData,
-    create_session_cookie,SessionBuilder,IdType
+    parse_params,Session,SESSION_PREFIX,generate_random_text, get_return_target,
+    create_session_cookie,SessionBuilder,IdType,template,Templater
 };
 use serde::{Serialize,Deserialize};
 
@@ -38,9 +37,8 @@ struct AtPendingAuthRequest {
 
 type DaOAuthClient<'a, T> = OAuthClient<AtKvStore<'a, T>,CommonDidResolver<AtHttpClient>,AtprotoHandleResolver<AtDnsTxtResolver,AtHttpClient>,AtHttpClient>;
 
-const LOGIN_ATPROTO_TMPL: &str = include_str!("../templates/login_atproto.html");
 
-pub fn handle_login<T>(req: &DaHttpRequest, kv_store: &KvStore<T>, config: &Config) -> error::Result<DaHttpResponse> 
+pub fn handle_login<T>(req: &DaHttpRequest, kv_store: &KvStore<T>, config: &Config, templater: &Templater) -> error::Result<DaHttpResponse> 
 where T: kv::Store,
 {
     let params = parse_params(&req).unwrap_or(HashMap::new());
@@ -87,18 +85,11 @@ where T: kv::Store,
         Ok(res)
     }
     else {
-        let session = get_session(&req, &kv_store, config);
-
-        let template = mustache::compile_str(LOGIN_ATPROTO_TMPL)?;
-        let data = CommonTemplateData{ 
+        let data = template::CommonData{
             config,
-            header: HEADER_TMPL,
-            footer: FOOTER_TMPL,
-            session,
-            prefix: config.path_prefix.to_string(),
             return_target: get_return_target(&req),
         };
-        let body = template.render_to_string(&data)?;
+        let body = templater.render_atproto_page(&data)?;
 
         let mut res = DaHttpResponse::new(200, &body);
         res.headers = BTreeMap::from([
