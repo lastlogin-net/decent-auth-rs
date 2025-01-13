@@ -31,6 +31,7 @@ pub struct TemplateData {
     qr_svg: String,
     pkce_code_challenge: String,
     pkce_code_verifier: String,
+    runtime: String,
 }
 
 pub struct DataBuilder {
@@ -55,6 +56,7 @@ impl DataBuilder {
                 qr_svg: "".to_string(),
                 pkce_code_challenge: "".to_string(),
                 pkce_code_verifier: "".to_string(),
+                runtime: config.runtime.clone().unwrap_or("".to_string()),
             },
         }
     }
