@@ -3,14 +3,10 @@ use serde::{Serialize,Deserialize};
 use extism_pdk::{host_fn};
 use crate::{
     DaHttpRequest,DaHttpResponse,KvStore,Config,error,kv,Url,DaError,
-    parse_params,Session,SESSION_PREFIX,generate_random_key,HEADER_TMPL,
-    FOOTER_TMPL,get_return_target,CommonTemplateData,
-    create_session_cookie,SessionBuilder,IdType,email,
-    generate_random_text,
+    parse_params,Session,SESSION_PREFIX,generate_random_key, get_return_target,
+    create_session_cookie,SessionBuilder,IdType,email, generate_random_text,template,
 };
 
-const LOGIN_EMAIL_TMPL: &str = include_str!("../templates/login_email.html");
-const APPROVE_CODE_TMPL: &str = include_str!("../templates/approve_code.html");
 
 #[derive(Debug,Clone,Serialize,Deserialize)]
 pub struct SmtpConfig {
@@ -70,7 +66,7 @@ pub fn send_email(msg: Message, smtp_config: &SmtpConfig) {
 }
 
 
-pub fn handle_login<T>(req: &DaHttpRequest, kv_store: &KvStore<T>, config: &Config) -> error::Result<DaHttpResponse> 
+pub fn handle_login<T>(req: &DaHttpRequest, kv_store: &KvStore<T>, config: &Config, templater: &template::Templater) -> error::Result<DaHttpResponse> 
 where T: kv::Store,
 {
     let parsed_url = Url::parse(&req.url)?; 
@@ -104,16 +100,12 @@ where T: kv::Store,
             return Ok(DaHttpResponse::new(400, "No SMTP config"));
         }
 
-        let template = mustache::compile_str(APPROVE_CODE_TMPL)?;
-        let data = CommonTemplateData{ 
+        let data = template::CommonData{
             config,
-            header: HEADER_TMPL,
-            footer: FOOTER_TMPL,
-            session: None,
-            prefix: config.path_prefix.to_string(),
             return_target: get_return_target(&req),
         };
-        let body = template.render_to_string(&data)?;
+        let body = templater.render_approve_code_page(&data)?;
+
 
         let mut res = DaHttpResponse::new(200, &body);
         res.headers = BTreeMap::from([
@@ -152,16 +144,12 @@ where T: kv::Store,
         return Ok(res);
     }
     else {
-        let template = mustache::compile_str(LOGIN_EMAIL_TMPL)?;
-        let data = CommonTemplateData{ 
+        let data = template::CommonData{
             config,
-            header: HEADER_TMPL,
-            footer: FOOTER_TMPL,
-            session: None,
-            prefix: config.path_prefix.to_string(),
             return_target: get_return_target(&req),
         };
-        let body = template.render_to_string(&data)?;
+        let body = templater.render_email_page(&data)?;
+
 
         let mut res = DaHttpResponse::new(200, &body);
         res.headers = BTreeMap::from([

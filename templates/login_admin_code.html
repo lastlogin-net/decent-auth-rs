@@ -1,8 +1,8 @@
-{{{header}}}
+{{> header.html}}
 
 <h1>Admin Code Login</h1>
 
-<form action='{{prefix}}/login' method='POST'>
+<form action='{{path_prefix}}/login' method='POST'>
   <input type='hidden' name='return_target' value='{{return_target}}' />
   <input type='hidden' name='type' value='Admin Code' />
   <input type='password' name='code' placeholder='Admin code' />
@@ -11,4 +11,4 @@
   </button>
 </form>
 
-{{{footer}}}
+{{> footer.html}}

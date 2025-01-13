@@ -1,4 +1,4 @@
-{{{header}}}
+{{> header.html}}
 
 <h1>QR Code Login</h1>
 
@@ -10,11 +10,11 @@
   {{{qr_svg}}}
 </div>
 
-<form action='{{prefix}}/qr/finalize' method='POST'>
+<form action='{{path_prefix}}/qr/finalize' method='POST'>
   <input type='hidden' name='key' value='{{qr_key}}' />
   <button class='formbutton' type='submit'>
     Continue
   </button>
 </form>
 
-{{{footer}}}
+{{> footer.html}}

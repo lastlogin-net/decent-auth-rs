@@ -1,8 +1,8 @@
 use crate::{
     DaHttpRequest,DaHttpResponse,KvStore,Config,kv,error,parse_params,
-    get_return_target,HEADER_TMPL,FOOTER_TMPL,Session,
+    get_return_target,
     HttpRequest,Method,HeaderMap,HeaderValue,Url,create_session_cookie,
-    SESSION_PREFIX,generate_random_text,IdType,SessionBuilder,
+    SESSION_PREFIX,generate_random_text,IdType,SessionBuilder,template
 };
 use std::collections::{HashMap,BTreeMap};
 use serde::{Serialize,Deserialize};
@@ -39,21 +39,7 @@ struct IndieAuthProfile {
     email: String,
 }
 
-#[derive(Serialize)]
-struct TemplateData<'a> {
-    config: &'a Config,
-    header: &'static str,
-    footer: &'static str,
-    session: Option<Session>,
-    prefix: String,
-    return_target: String,
-    pkce_code_challenge: String,
-    pkce_code_verifier: String,
-}
-
-const LOGIN_FEDCM_TMPL: &str = include_str!("../templates/login_fedcm.html");
-
-pub fn handle_login<T>(req: &DaHttpRequest, kv_store: &KvStore<T>, config: &Config) -> error::Result<DaHttpResponse> 
+pub fn handle_login<T>(req: &DaHttpRequest, kv_store: &KvStore<T>, config: &Config, templater: &template::Templater) -> error::Result<DaHttpResponse> 
 where T: kv::Store,
 {
     let params = parse_params(&req).unwrap_or(HashMap::new());
@@ -123,18 +109,13 @@ where T: kv::Store,
 
         let (pkce_challenge, pkce_verifier) = PkceCodeChallenge::new_random_sha256();
 
-        let template = mustache::compile_str(LOGIN_FEDCM_TMPL)?;
-        let data = TemplateData{ 
+        let data = template::FedCmData{ 
             config,
-            header: HEADER_TMPL,
-            footer: FOOTER_TMPL,
-            session: None,
-            prefix: config.path_prefix.to_string(),
             return_target: get_return_target(&req),
             pkce_code_challenge: pkce_challenge.as_str().to_string(),
             pkce_code_verifier: pkce_verifier.secret().to_string(),
         };
-        let body = template.render_to_string(&data)?;
+        let body = templater.render_fedcm_page(&data)?;
 
         let mut res = DaHttpResponse::new(200, &body);
         res.headers = BTreeMap::from([

@@ -12,6 +12,13 @@ const INDEX_TMPL: &str = include_str!("../templates/index.html");
 const LOGIN_TMPL: &str = include_str!("../templates/login.html");
 const LOGIN_ATPROTO_TMPL: &str = include_str!("../templates/login_atproto.html");
 const LOGIN_FEDIVERSE_TMPL: &str = include_str!("../templates/login_fediverse.html");
+const LOGIN_ADMIN_CODE_TMPL: &str = include_str!("../templates/login_admin_code.html");
+const LOGIN_QR_CODE_TMPL: &str = include_str!("../templates/login_qr.html");
+const QR_LINK_TMPL: &str = include_str!("../templates/qr_link.html");
+const QR_APPROVED_TMPL: &str = include_str!("../templates/qr_approved.html");
+const LOGIN_EMAIL_TMPL: &str = include_str!("../templates/login_email.html");
+const APPROVE_CODE_TMPL: &str = include_str!("../templates/approve_code.html");
+const LOGIN_FEDCM_TMPL: &str = include_str!("../templates/login_fedcm.html");
 
 #[derive(Debug,Content)]
 pub struct TemplateData {
@@ -20,6 +27,10 @@ pub struct TemplateData {
     id: String,
     login_methods: Vec<InternalLoginMethod>,
     method_type: String,
+    qr_key: String,
+    qr_svg: String,
+    pkce_code_challenge: String,
+    pkce_code_verifier: String,
 }
 
 pub struct DataBuilder {
@@ -40,6 +51,10 @@ impl DataBuilder {
                 id: "".to_string(),
                 method_type: "".to_string(),
                 login_methods,
+                qr_key: "".to_string(),
+                qr_svg: "".to_string(),
+                pkce_code_challenge: "".to_string(),
+                pkce_code_verifier: "".to_string(),
             },
         }
     }
@@ -59,6 +74,26 @@ impl DataBuilder {
         self
     }
 
+    pub fn qr_key(mut self, val: &str) -> Self {
+        self.td.qr_key = val.to_string();
+        self
+    }
+
+    pub fn qr_svg(mut self, val: &str) -> Self {
+        self.td.qr_svg = val.to_string();
+        self
+    }
+
+    pub fn pkce_code_challenge(mut self, val: &str) -> Self {
+        self.td.pkce_code_challenge = val.to_string();
+        self
+    }
+
+    pub fn pkce_code_verifier(mut self, val: &str) -> Self {
+        self.td.pkce_code_verifier = val.to_string();
+        self
+    }
+
     pub fn build(self) -> TemplateData {
         self.td
     }
@@ -75,6 +110,26 @@ pub struct IndexPageData<'a> {
 pub struct CommonData<'a> {
     pub config: &'a Config,
     pub return_target: String,
+}
+
+pub struct QrData<'a>{
+    pub config: &'a Config,
+    pub return_target: String,
+    pub qr_svg: String,
+    pub qr_key: String,
+}
+
+pub struct QrLinkData<'a>{
+    pub config: &'a Config,
+    pub return_target: String,
+    pub qr_key: String,
+}
+
+pub struct FedCmData<'a> {
+    pub config: &'a Config,
+    pub return_target: String,
+    pub pkce_code_challenge: String,
+    pub pkce_code_verifier: String,
 }
 
 #[derive(Debug,Content)]
@@ -145,6 +200,13 @@ impl Templater {
         ramhorns.insert(LOGIN_TMPL, "login.html").expect("Failed to get template");
         ramhorns.insert(LOGIN_ATPROTO_TMPL, "login_atproto.html").expect("Failed to get template");
         ramhorns.insert(LOGIN_FEDIVERSE_TMPL, "login_fediverse.html").expect("Failed to get template");
+        ramhorns.insert(LOGIN_ADMIN_CODE_TMPL, "login_admin_code.html").expect("Failed to get template");
+        ramhorns.insert(LOGIN_QR_CODE_TMPL, "login_qr.html").expect("Failed to get template");
+        ramhorns.insert(QR_LINK_TMPL, "qr_link.html").expect("Failed to get template");
+        ramhorns.insert(QR_APPROVED_TMPL, "qr_approved.html").expect("Failed to get template");
+        ramhorns.insert(LOGIN_EMAIL_TMPL, "login_email.html").expect("Failed to get template");
+        ramhorns.insert(APPROVE_CODE_TMPL, "approve_code.html").expect("Failed to get template");
+        ramhorns.insert(LOGIN_FEDCM_TMPL, "login_fedcm.html").expect("Failed to get template");
 
         Self{
             ramhorns,
@@ -184,6 +246,67 @@ impl Templater {
             .method_type(FEDIVERSE_STR)
             .build();
         self.render_common("login_fediverse.html", &data)
+    }
+
+    pub fn render_admin_code_page(&self, data: &CommonData) -> error::Result<String> {
+        let data = DataBuilder::new(data.config)
+            .return_target(&data.return_target)
+            .method_type(ADMIN_CODE_STR)
+            .build();
+        self.render_common("login_admin_code.html", &data)
+    }
+
+    pub fn render_qr_code_page(&self, data: &QrData) -> error::Result<String> {
+        let data = DataBuilder::new(data.config)
+            .return_target(&data.return_target)
+            .method_type(QR_CODE_STR)
+            .qr_key(&data.qr_key)
+            .qr_svg(&data.qr_svg)
+            .build();
+        self.render_common("login_qr.html", &data)
+    }
+
+    pub fn render_qr_code_link_page(&self, data: &QrLinkData) -> error::Result<String> {
+        let data = DataBuilder::new(data.config)
+            .return_target(&data.return_target)
+            .method_type(QR_CODE_STR)
+            .qr_key(&data.qr_key)
+            .build();
+        self.render_common("qr_link.html", &data)
+    }
+
+    pub fn render_qr_approved_page(&self, data: &CommonData) -> error::Result<String> {
+        let data = DataBuilder::new(data.config)
+            .return_target(&data.return_target)
+            .method_type(QR_CODE_STR)
+            .build();
+        self.render_common("qr_approved.html", &data)
+    }
+
+    pub fn render_email_page(&self, data: &CommonData) -> error::Result<String> {
+        let data = DataBuilder::new(data.config)
+            .return_target(&data.return_target)
+            .method_type(EMAIL_STR)
+            .build();
+        self.render_common("login_email.html", &data)
+    }
+
+    pub fn render_approve_code_page(&self, data: &CommonData) -> error::Result<String> {
+        let data = DataBuilder::new(data.config)
+            .return_target(&data.return_target)
+            .method_type(EMAIL_STR)
+            .build();
+        self.render_common("approve_code.html", &data)
+    }
+
+    pub fn render_fedcm_page(&self, data: &FedCmData) -> error::Result<String> {
+        let data = DataBuilder::new(data.config)
+            .return_target(&data.return_target)
+            .method_type(FEDCM_STR)
+            .pkce_code_challenge(&data.pkce_code_challenge)
+            .pkce_code_verifier(&data.pkce_code_verifier)
+            .build();
+        self.render_common("login_fedcm.html", &data)
     }
 
     fn render_common(&self, name: &str, data: &TemplateData) -> error::Result<String> {

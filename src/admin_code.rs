@@ -1,14 +1,12 @@
 use std::collections::{BTreeMap};
 use crate::{error,Params,DaHttpResponse};
 use crate::{
-    SESSION_PREFIX,SessionBuilder,IdType,
-    get_return_target,HEADER_TMPL,FOOTER_TMPL,LOGIN_ADMIN_CODE_TMPL,
-    CommonTemplateData,get_session,DaHttpRequest,Config,KvStore,
-    create_session_cookie,generate_random_text,
+    SESSION_PREFIX,SessionBuilder,IdType, get_return_target, DaHttpRequest,Config,KvStore,
+    create_session_cookie,generate_random_text,template,Templater
 };
 use crate::kv;
 
-pub fn handle_login<T: kv::Store>(req: &DaHttpRequest, kv_store: &KvStore<T>, params: &Params, config: &Config) -> error::Result<DaHttpResponse> {
+pub fn handle_login<T: kv::Store>(req: &DaHttpRequest, kv_store: &KvStore<T>, params: &Params, config: &Config, templater: &Templater) -> error::Result<DaHttpResponse> {
 
     let admin_id = if let Some(admin_id) = &config.admin_id {
         admin_id
@@ -55,18 +53,11 @@ pub fn handle_login<T: kv::Store>(req: &DaHttpRequest, kv_store: &KvStore<T>, pa
 
         println!("Admin login code: {}", new_code);
 
-        let session = get_session(&req, kv_store, config);
-
-        let template = mustache::compile_str(LOGIN_ADMIN_CODE_TMPL)?;
-        let data = CommonTemplateData{ 
+        let data = template::CommonData{
             config,
-            header: HEADER_TMPL,
-            footer: FOOTER_TMPL,
-            session,
-            prefix: config.path_prefix.clone(),
             return_target: get_return_target(&req),
         };
-        let body = template.render_to_string(&data)?;
+        let body = templater.render_admin_code_page(&data)?;
 
         let mut res = DaHttpResponse::new(200, &body);
         res.headers = BTreeMap::from([

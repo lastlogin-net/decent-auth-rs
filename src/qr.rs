@@ -1,8 +1,7 @@
 use crate::{
-    DaHttpRequest,DaHttpResponse,error,kv,KvStore,Config,HEADER_TMPL,
-    FOOTER_TMPL,get_return_target,get_session,
+    DaHttpRequest,DaHttpResponse,error,kv,KvStore,Config, get_return_target,get_session,
     Session,SessionBuilder,DaError,generate_random_text,parse_params,
-    create_session_cookie,SESSION_PREFIX,CommonTemplateData,
+    create_session_cookie,SESSION_PREFIX,template,Templater
 };
 use url::Url;
 use std::collections::{HashMap,BTreeMap};
@@ -10,31 +9,6 @@ use qrcode::{QrCode};
 use qrcode::render::svg;
 use serde::{Serialize,Deserialize};
 
-const LOGIN_QR_CODE_TMPL: &str = include_str!("../templates/login_qr.html");
-const QR_LINK_TMPL: &str = include_str!("../templates/qr_link.html");
-const QR_APPROVED_TMPL: &str = include_str!("../templates/qr_approved.html");
-
-#[derive(Serialize)]
-struct QrTemplateData<'a>{
-    config: &'a Config,
-    header: &'static str,
-    footer: &'static str,
-    session: Option<Session>,
-    prefix: String,
-    return_target: String,
-    qr_svg: String,
-    qr_key: String,
-}
-
-#[derive(Serialize)]
-struct QrLinkTemplateData<'a>{
-    config: &'a Config,
-    header: &'static str,
-    footer: &'static str,
-    prefix: String,
-    return_target: String,
-    qr_key: String,
-}
 
 #[derive(Debug,Serialize,Deserialize)]
 struct PendingQrData {
@@ -42,12 +16,10 @@ struct PendingQrData {
     session: Option<Session>,
 }
 
-pub fn handle_login<T>(req: &DaHttpRequest, kv_store: &KvStore<T>, config: &Config) -> error::Result<DaHttpResponse> 
+pub fn handle_login<T>(req: &DaHttpRequest, kv_store: &KvStore<T>, config: &Config, templater: &Templater) -> error::Result<DaHttpResponse> 
     where T: kv::Store,
 {
     let parsed_url = Url::parse(&req.url)?; 
-
-    let session = get_session(&req, &kv_store, config);
 
     let qr_key = generate_random_text();
 
@@ -62,19 +34,14 @@ pub fn handle_login<T>(req: &DaHttpRequest, kv_store: &KvStore<T>, config: &Conf
         .light_color(svg::Color("#ffffff"))
         .build();
 
-    let template = mustache::compile_str(LOGIN_QR_CODE_TMPL)?;
-    let data = QrTemplateData {
+    let data = template::QrData{
         config,
-        header: HEADER_TMPL,
-        footer: FOOTER_TMPL,
-        session,
-        prefix: config.path_prefix.to_string(),
         return_target: get_return_target(&req),
         qr_svg,
         qr_key: qr_key.clone(),
     };
+    let body = templater.render_qr_code_page(&data)?;
 
-    let body = template.render_to_string(&data)?;
 
     let storage_key = format!("/{}/pending_qr_logins/{}", config.storage_prefix, qr_key);
 
@@ -94,7 +61,7 @@ pub fn handle_login<T>(req: &DaHttpRequest, kv_store: &KvStore<T>, config: &Conf
 }
 
 
-pub fn handle<T: kv::Store>(req: &DaHttpRequest, kv_store: &KvStore<T>, config: &Config) -> error::Result<DaHttpResponse> {
+pub fn handle<T: kv::Store>(req: &DaHttpRequest, kv_store: &KvStore<T>, config: &Config, templater: &Templater) -> error::Result<DaHttpResponse> {
 
     let parsed_url = Url::parse(&req.url)?; 
     let path = parsed_url.path();
@@ -128,18 +95,13 @@ pub fn handle<T: kv::Store>(req: &DaHttpRequest, kv_store: &KvStore<T>, config: 
             return Ok(DaHttpResponse::new(400, &format!("Missing key param")));
         };
 
-        let template = mustache::compile_str(QR_LINK_TMPL)?;
-
-        let data = QrLinkTemplateData {
+        let data = template::QrLinkData {
             config,
-            header: HEADER_TMPL,
-            footer: FOOTER_TMPL,
-            prefix: config.path_prefix.to_string(),
             return_target: get_return_target(&req),
             qr_key: qr_key.to_string(),
         };
+        let body = templater.render_qr_code_link_page(&data)?;
 
-        let body = template.render_to_string(&data)?;
         let mut res = DaHttpResponse::new(200, &body);
         res.headers = BTreeMap::from([
             ("Content-Type".to_string(), vec!["text/html".to_string()]),
@@ -168,17 +130,13 @@ pub fn handle<T: kv::Store>(req: &DaHttpRequest, kv_store: &KvStore<T>, config: 
 
         kv_store.set(&storage_key, state)?;
 
-        let data = CommonTemplateData{ 
+        let data = template::CommonData{
             config,
-            header: HEADER_TMPL,
-            footer: FOOTER_TMPL,
-            session: None,
-            prefix: config.path_prefix.to_string(),
             return_target: get_return_target(&req),
         };
+        let body = templater.render_qr_approved_page(&data)?;
 
-        let template = mustache::compile_str(QR_APPROVED_TMPL)?;
-        let body = template.render_to_string(&data)?;
+
         let mut res = DaHttpResponse::new(200, &body);
         res.headers = BTreeMap::from([
             ("Content-Type".to_string(), vec!["text/html".to_string()]),

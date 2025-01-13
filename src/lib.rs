@@ -118,19 +118,6 @@ impl<T: kv::Store> KvStore<T> {
 const SESSION_PREFIX: &str = "sessions";
 const OAUTH_STATE_PREFIX: &str = "oauth_state";
 
-const HEADER_TMPL: &str = include_str!("../templates/header.html");
-const FOOTER_TMPL: &str = include_str!("../templates/footer.html");
-const LOGIN_ADMIN_CODE_TMPL: &str = include_str!("../templates/login_admin_code.html");
-
-#[derive(Serialize)]
-struct CommonTemplateData<'a>{
-    config: &'a Config,
-    header: &'static str,
-    footer: &'static str,
-    session: Option<Session>,
-    prefix: String,
-    return_target: String,
-}
 
 #[derive(Debug,Serialize,Deserialize)]
 struct DaHttpRequest {
@@ -387,10 +374,10 @@ fn handle<T>(req: DaHttpRequest, kv_store: &KvStore<T>, config: &Config, templat
                     }
                 },
                 QR_CODE_STR => {
-                    return qr::handle_login(&req, kv_store, config);
+                    return qr::handle_login(&req, kv_store, config, templater);
                 },
                 ADMIN_CODE_STR => {
-                    return admin_code::handle_login(&req, kv_store, &params, config);
+                    return admin_code::handle_login(&req, kv_store, &params, config, templater);
                 },
                 ATPROTO_STR => {
                     return atproto::handle_login(&req, kv_store, &config, templater);
@@ -399,10 +386,10 @@ fn handle<T>(req: DaHttpRequest, kv_store: &KvStore<T>, config: &Config, templat
                     return fediverse::handle_login(&req, kv_store, &config, templater);
                 },
                 EMAIL_STR => {
-                    return email::handle_login(&req, kv_store, &config);
+                    return email::handle_login(&req, kv_store, &config, templater);
                 },
                 FEDCM_STR => {
-                    return fedcm::handle_login(&req, kv_store, &config);
+                    return fedcm::handle_login(&req, kv_store, config, templater);
                 },
                 &_ => {
                     return Ok(DaHttpResponse::new(400, "Invalid login type"))
@@ -417,7 +404,7 @@ fn handle<T>(req: DaHttpRequest, kv_store: &KvStore<T>, config: &Config, templat
         DaHttpResponse::new(200, "")
     }
     else if path.starts_with(&format!("{}/qr", path_prefix)) {
-        qr::handle(&req, kv_store, &config)?
+        qr::handle(&req, kv_store, &config, templater)?
     }
     else if path == format!("{}/atproto-client-metadata.json", path_prefix) {
         atproto::handle_client_metadata(&req, kv_store, &config)?

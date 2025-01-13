@@ -1,8 +1,8 @@
-{{{header}}}
+{{> header.html}}
 
 <h1>Login with FedCM</h1>
 
-<form id='fedcm-login-form' action="{{prefix}}/login" method="POST">
+<form id='fedcm-login-form' action="{{path_prefix}}/login" method="POST">
   <input type='hidden' name='return_target' value='{{return_target}}' />
   <input type='hidden' name='pkce_code_verifier' value='{{pkce_code_verifier}}' />
   <input type='hidden' name='type' value='FedCM' />
@@ -41,4 +41,4 @@
 </script>
 
 
-{{{footer}}}
+{{> footer.html}}
