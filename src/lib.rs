@@ -32,6 +32,7 @@ mod wasm;
 mod email;
 mod fedcm;
 mod template;
+mod oauth;
 
 #[derive(Debug,Serialize,Deserialize)]
 pub struct Config {
@@ -265,6 +266,17 @@ fn get_session<T: kv::Store>(req: &DaHttpRequest, kv_store: &KvStore<T>, config:
         }
     } 
 
+    if let parsed_url = Url::parse(&req.url) {
+        let params = parse_params(&req).unwrap_or(HashMap::new());
+
+        if let Some(token) = params.get("access_token") {
+            let session_key = format!("/{}/{}/{}", config.storage_prefix, SESSION_PREFIX, &token);
+            if let Ok(session) = kv_store.get(&session_key) {
+                return Some(session);
+            }
+        }
+    }
+
     None
 }
 
@@ -435,6 +447,9 @@ fn handle<T>(req: DaHttpRequest, kv_store: &KvStore<T>, config: &Config, templat
         ]);
 
         res
+    }
+    else if path.starts_with(&format!("{}/oauth", path_prefix)) {
+        oauth::handle(&req, kv_store, &config, templater)?
     }
     else {
         DaHttpResponse::new(404, "Not found")
