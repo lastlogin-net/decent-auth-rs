@@ -111,9 +111,9 @@ impl<T: kv::Store> KvStore<T> {
         Ok(self.byte_kv.delete(key)?)
     }
 
-    fn list(&self, prefix: &str) -> Result<Vec<String>, kv::Error> {
-        self.byte_kv.list(prefix)
-    }
+    //fn list(&self, prefix: &str) -> Result<Vec<String>, kv::Error> {
+    //    self.byte_kv.list(prefix)
+    //}
 }
 
 const SESSION_PREFIX: &str = "sessions";
@@ -237,7 +237,7 @@ impl SessionBuilder {
 
 fn get_session<T: kv::Store>(req: &DaHttpRequest, kv_store: &KvStore<T>, config: &Config) -> Option<Session> {
 
-    clear_expired_sessions(kv_store, config);
+    //clear_expired_sessions(kv_store, config);
 
     if let Some(id_header_name) = &config.id_header_name {
         if let Some(ids) = req.headers.get(&id_header_name.to_lowercase()) {
@@ -472,25 +472,25 @@ fn create_session_cookie<'a>(storage_prefix: &'a str, session_key: &'a str) -> C
         .same_site(SameSite::Lax)
 }
 
-const MAX_SESSION_AGE: i64 = 86400;
+//const MAX_SESSION_AGE: i64 = 86400;
 
-fn clear_expired_sessions<T: kv::Store>(kv_store: &KvStore<T>, config: &Config) {
-
-    let now: DateTime<Utc> = Utc::now();
-
-    let session_prefix = format!("/{}/{}/", config.storage_prefix, SESSION_PREFIX);
-
-    if let Ok(session_keys) = kv_store.list(&session_prefix) {
-        for key in session_keys {
-            if let Ok(session) = kv_store.get::<Session>(&key) {
-                let age = now.signed_duration_since(session.created_at);
-                if age.num_seconds() > MAX_SESSION_AGE {
-                    let _ = kv_store.delete(&key);
-                }
-            }
-        }
-    }
-    else {
-        println!("clear_expired_sessions: kv_store.list() failed");
-    }
-}
+//fn clear_expired_sessions<T: kv::Store>(kv_store: &KvStore<T>, config: &Config) {
+//
+//    let now: DateTime<Utc> = Utc::now();
+//
+//    let session_prefix = format!("/{}/{}/", config.storage_prefix, SESSION_PREFIX);
+//
+//    if let Ok(session_keys) = kv_store.list(&session_prefix) {
+//        for key in session_keys {
+//            if let Ok(session) = kv_store.get::<Session>(&key) {
+//                let age = now.signed_duration_since(session.created_at);
+//                if age.num_seconds() > MAX_SESSION_AGE {
+//                    let _ = kv_store.delete(&key);
+//                }
+//            }
+//        }
+//    }
+//    else {
+//        println!("clear_expired_sessions: kv_store.list() failed");
+//    }
+//}
