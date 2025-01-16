@@ -12,6 +12,28 @@ struct TokenResponse<'a> {
     access_token: &'a str,
 }
 
+#[derive(Serialize)]
+struct ErrorResponse<'a> {
+    message: &'a str,
+}
+
+fn send_error_json(message: &str, code: u16) -> error::Result<DaHttpResponse> {
+
+    let error_res = ErrorResponse{
+        message,
+    };
+
+    let body_json = String::from_utf8(serde_json::to_vec(&error_res)?)?;
+
+    let mut res = DaHttpResponse::new(code, &body_json);
+    res.headers = BTreeMap::from([
+        ("Access-Control-Allow-Origin".to_string(), vec!["*".to_string()]),
+        ("Content-Type".to_string(), vec!["application/json".to_string()]),
+    ]);
+
+    return Ok(res);
+}
+
 pub fn handle<T: kv::Store>(req: &DaHttpRequest, kv_store: &KvStore<T>, config: &Config, templater: &Templater) -> error::Result<DaHttpResponse> {
 
     let parsed_url = Url::parse(&req.url)?; 
@@ -120,17 +142,27 @@ pub fn handle<T: kv::Store>(req: &DaHttpRequest, kv_store: &KvStore<T>, config: 
             code
         }
         else {
-            return send_error_page("Missing code param", 400, req, config, templater);
+            return send_error_json("Missing code param", 400);
         };
 
         let key = format!("/{}/pending_oauth_code/{}", config.storage_prefix, code);
-        let session: Session = kv_store.get(&key)?; 
+        let session: Session = if let Ok(session) = kv_store.get(&key) {
+            session
+        }
+        else {
+            return send_error_json("No pending OAuth2 request", 400);
+        };
+
+        let _ = kv_store.delete(&key); 
 
         let token = generate_random_text();
         let kv_session_key = format!("/{}/{}/{}", config.storage_prefix, SESSION_PREFIX, token);
         let new_session = SessionBuilder::new(session.id_type, &session.id)
             .build();
-        kv_store.set(&kv_session_key, &new_session)?;
+
+        if kv_store.set(&kv_session_key, &new_session).is_err() {
+            return send_error_json("Failed to create session", 500);
+        }
 
         let token_res = TokenResponse{
             access_token: &token,
