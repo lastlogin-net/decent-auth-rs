@@ -1,7 +1,7 @@
 use crate::{
     DaHttpRequest,KvStore,Config,Templater,DaHttpResponse,kv,error,
     parse_params,generate_random_text,get_session,SessionBuilder,SESSION_PREFIX,
-    get_return_target,template,DaError,Session
+    get_return_target,template,DaError,Session,send_error_page,
 };
 use std::collections::{HashMap,BTreeMap};
 use url::Url;
@@ -38,7 +38,8 @@ pub fn handle<T: kv::Store>(req: &DaHttpRequest, kv_store: &KvStore<T>, config: 
             client_id
         }
         else {
-            return Ok(DaHttpResponse::new(400, "Missing client_id"));
+            println!("here");
+            return send_error_page("Missing client_id param", 400, req, config, templater);
         };
 
         let parsed_client_id = Url::parse(&client_id)?; 
@@ -48,11 +49,11 @@ pub fn handle<T: kv::Store>(req: &DaHttpRequest, kv_store: &KvStore<T>, config: 
             redirect_uri
         }
         else {
-            return Ok(DaHttpResponse::new(400, "Missing redirect_uri"));
+            return send_error_page("Missing redirect_uri param", 400, req, config, templater);
         };
 
         if !redirect_uri.starts_with(client_id) {
-            return Ok(DaHttpResponse::new(400, "redirect_uri must be on same domain as client_id"));
+            return send_error_page("redirect_uri must be on same domain as client_id", 400, req, config, templater);
         }
 
 
@@ -97,7 +98,7 @@ pub fn handle<T: kv::Store>(req: &DaHttpRequest, kv_store: &KvStore<T>, config: 
             redirect_uri
         }
         else {
-            return Ok(DaHttpResponse::new(400, "Missing redirect_uri"));
+            return send_error_page("Missing redirect_uri param", 400, req, config, templater);
         };
 
         let code = generate_random_text();
@@ -115,7 +116,12 @@ pub fn handle<T: kv::Store>(req: &DaHttpRequest, kv_store: &KvStore<T>, config: 
     }
     else if path == &format!("{}/oauth/token", config.path_prefix) {
 
-        let code = params.get("code").unwrap();
+        let code = if let Some(code) = params.get("code") {
+            code
+        }
+        else {
+            return send_error_page("Missing code param", 400, req, config, templater);
+        };
 
         let key = format!("/{}/pending_oauth_code/{}", config.storage_prefix, code);
         let session: Session = kv_store.get(&key)?; 
@@ -141,5 +147,5 @@ pub fn handle<T: kv::Store>(req: &DaHttpRequest, kv_store: &KvStore<T>, config: 
         return Ok(res);
     }
 
-    Ok(DaHttpResponse::new(200, ""))
+    return send_error_page("Not found", 404, req, config, templater);
 }

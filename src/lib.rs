@@ -472,6 +472,24 @@ fn create_session_cookie<'a>(storage_prefix: &'a str, session_key: &'a str) -> C
         .same_site(SameSite::Lax)
 }
 
+fn send_error_page(message: &str, code: u16, req: &DaHttpRequest, config: &Config, templater: &template::Templater) -> error::Result<DaHttpResponse> {
+
+    let data = template::ErrorData{
+        config,
+        return_target: get_return_target(&req),
+        message,
+    };
+
+    let body = templater.render_error_page(&data)?;
+
+    let mut res = DaHttpResponse::new(code, &body);
+    res.headers = BTreeMap::from([
+        ("Content-Type".to_string(), vec!["text/html".to_string()]),
+    ]);
+
+    return Ok(res);
+}
+
 //const MAX_SESSION_AGE: i64 = 86400;
 
 //fn clear_expired_sessions<T: kv::Store>(kv_store: &KvStore<T>, config: &Config) {

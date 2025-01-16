@@ -1,0 +1,16 @@
+{{> header.html}}
+
+<h1>OAuth Approve</h1>
+
+<p>
+  <strong>{{client_id}}</strong> wants access to your files
+</p>
+
+<form action='{{path_prefix}}/oauth/approve' method='POST'>
+  <input type='hidden' name='return_target' value='{{return_target}}' />
+  <input type='hidden' name='auth_url' value='{{auth_url}}' />
+  <button class='formbutton' type='submit'>Approve</button>
+  <button class='formbutton' formaction='{{path_prefix}}/oauth/deny'>Deny</button>
+</form>
+
+{{> footer.html}}

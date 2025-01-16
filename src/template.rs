@@ -20,6 +20,7 @@ const LOGIN_EMAIL_TMPL: &str = include_str!("../templates/login_email.html");
 const APPROVE_CODE_TMPL: &str = include_str!("../templates/approve_code.html");
 const LOGIN_FEDCM_TMPL: &str = include_str!("../templates/login_fedcm.html");
 const APPROVE_OAUTH_TMPL: &str = include_str!("../templates/approve_oauth.html");
+const ERROR_TMPL: &str = include_str!("../templates/error.html");
 
 #[derive(Debug,Content)]
 pub struct TemplateData {
@@ -35,6 +36,7 @@ pub struct TemplateData {
     runtime: String,
     client_id: String,
     auth_url: String,
+    message: String,
 }
 
 pub struct DataBuilder {
@@ -62,6 +64,7 @@ impl DataBuilder {
                 runtime: config.runtime.clone().unwrap_or("".to_string()),
                 client_id: "".to_string(),
                 auth_url: "".to_string(),
+                message: "".to_string(),
             },
         }
     }
@@ -111,6 +114,11 @@ impl DataBuilder {
         self
     }
 
+    pub fn message(mut self, val: &str) -> Self {
+        self.td.message = val.to_string();
+        self
+    }
+
     pub fn build(self) -> TemplateData {
         self.td
     }
@@ -154,6 +162,12 @@ pub struct OAuth2Data<'a> {
     pub return_target: String,
     pub auth_url: &'a str,
     pub client_id: &'a str,
+}
+
+pub struct ErrorData<'a> {
+    pub config: &'a Config,
+    pub return_target: String,
+    pub message: &'a str,
 }
 
 #[derive(Debug,Content)]
@@ -232,6 +246,7 @@ impl Templater {
         ramhorns.insert(APPROVE_CODE_TMPL, "approve_code.html").expect("Failed to get template");
         ramhorns.insert(LOGIN_FEDCM_TMPL, "login_fedcm.html").expect("Failed to get template");
         ramhorns.insert(APPROVE_OAUTH_TMPL, "approve_oauth.html").expect("Failed to get template");
+        ramhorns.insert(ERROR_TMPL, "error.html").expect("Failed to get template");
 
         Self{
             ramhorns,
@@ -341,6 +356,14 @@ impl Templater {
             .auth_url(&data.auth_url)
             .build();
         self.render_common("approve_oauth.html", &data)
+    }
+
+    pub fn render_error_page(&self, data: &ErrorData) -> error::Result<String> {
+        let data = DataBuilder::new(data.config)
+            .return_target(&data.return_target)
+            .message(&data.message)
+            .build();
+        self.render_common("error.html", &data)
     }
 
     fn render_common(&self, name: &str, data: &TemplateData) -> error::Result<String> {
