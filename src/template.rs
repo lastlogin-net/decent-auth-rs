@@ -19,6 +19,7 @@ const QR_APPROVED_TMPL: &str = include_str!("../templates/qr_approved.html");
 const LOGIN_EMAIL_TMPL: &str = include_str!("../templates/login_email.html");
 const APPROVE_CODE_TMPL: &str = include_str!("../templates/approve_code.html");
 const LOGIN_FEDCM_TMPL: &str = include_str!("../templates/login_fedcm.html");
+const APPROVE_OAUTH_TMPL: &str = include_str!("../templates/approve_oauth.html");
 
 #[derive(Debug,Content)]
 pub struct TemplateData {
@@ -32,6 +33,8 @@ pub struct TemplateData {
     pkce_code_challenge: String,
     pkce_code_verifier: String,
     runtime: String,
+    client_id: String,
+    auth_url: String,
 }
 
 pub struct DataBuilder {
@@ -57,6 +60,8 @@ impl DataBuilder {
                 pkce_code_challenge: "".to_string(),
                 pkce_code_verifier: "".to_string(),
                 runtime: config.runtime.clone().unwrap_or("".to_string()),
+                client_id: "".to_string(),
+                auth_url: "".to_string(),
             },
         }
     }
@@ -96,6 +101,16 @@ impl DataBuilder {
         self
     }
 
+    pub fn client_id(mut self, val: &str) -> Self {
+        self.td.client_id = val.to_string();
+        self
+    }
+
+    pub fn auth_url(mut self, val: &str) -> Self {
+        self.td.auth_url = val.to_string();
+        self
+    }
+
     pub fn build(self) -> TemplateData {
         self.td
     }
@@ -132,6 +147,13 @@ pub struct FedCmData<'a> {
     pub return_target: String,
     pub pkce_code_challenge: String,
     pub pkce_code_verifier: String,
+}
+
+pub struct OAuth2Data<'a> {
+    pub config: &'a Config,
+    pub return_target: String,
+    pub auth_url: &'a str,
+    pub client_id: &'a str,
 }
 
 #[derive(Debug,Content)]
@@ -209,6 +231,7 @@ impl Templater {
         ramhorns.insert(LOGIN_EMAIL_TMPL, "login_email.html").expect("Failed to get template");
         ramhorns.insert(APPROVE_CODE_TMPL, "approve_code.html").expect("Failed to get template");
         ramhorns.insert(LOGIN_FEDCM_TMPL, "login_fedcm.html").expect("Failed to get template");
+        ramhorns.insert(APPROVE_OAUTH_TMPL, "approve_oauth.html").expect("Failed to get template");
 
         Self{
             ramhorns,
@@ -309,6 +332,15 @@ impl Templater {
             .pkce_code_verifier(&data.pkce_code_verifier)
             .build();
         self.render_common("login_fedcm.html", &data)
+    }
+
+    pub fn render_oauth_authorize_page(&self, data: &OAuth2Data) -> error::Result<String> {
+        let data = DataBuilder::new(data.config)
+            .return_target(&data.return_target)
+            .client_id(&data.client_id)
+            .auth_url(&data.auth_url)
+            .build();
+        self.render_common("approve_oauth.html", &data)
     }
 
     fn render_common(&self, name: &str, data: &TemplateData) -> error::Result<String> {

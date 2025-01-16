@@ -266,14 +266,12 @@ fn get_session<T: kv::Store>(req: &DaHttpRequest, kv_store: &KvStore<T>, config:
         }
     } 
 
-    if let parsed_url = Url::parse(&req.url) {
-        let params = parse_params(&req).unwrap_or(HashMap::new());
+    let params = parse_params(&req).unwrap_or(HashMap::new());
 
-        if let Some(token) = params.get("access_token") {
-            let session_key = format!("/{}/{}/{}", config.storage_prefix, SESSION_PREFIX, &token);
-            if let Ok(session) = kv_store.get(&session_key) {
-                return Some(session);
-            }
+    if let Some(token) = params.get("access_token") {
+        let session_key = format!("/{}/{}/{}", config.storage_prefix, SESSION_PREFIX, &token);
+        if let Ok(session) = kv_store.get(&session_key) {
+            return Some(session);
         }
     }
 
