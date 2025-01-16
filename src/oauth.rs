@@ -8,6 +8,14 @@ use url::Url;
 use serde::Serialize;
 
 #[derive(Serialize)]
+struct OAuth2Metadata<'a> {
+    issuer: &'a str,
+    authorization_endpoint: &'a str,
+    token_endpoint: &'a str,
+    response_types_supported: &'a [&'a str],
+}
+
+#[derive(Serialize)]
 struct TokenResponse<'a> {
     access_token: &'a str,
 }
@@ -40,7 +48,33 @@ pub fn handle<T: kv::Store>(req: &DaHttpRequest, kv_store: &KvStore<T>, config: 
     let path = parsed_url.path();
     let params = parse_params(&req).unwrap_or(HashMap::new());
 
-    if path == &format!("{}/oauth/authorize", config.path_prefix) {
+    if path == "/.well-known/oauth-authorization-server" {
+
+        let host = parsed_url.host_str().unwrap();
+
+        // TODO: handle localhost
+        let issuer = format!("https://{}", host);
+
+        let meta = OAuth2Metadata{
+            issuer: &issuer,
+            authorization_endpoint: &format!("{}{}/oauth/authorize", issuer, config.path_prefix),
+            token_endpoint: &format!("{}{}/oauth/token", issuer, config.path_prefix),
+            response_types_supported: &vec![
+                "code",
+            ],
+        };
+
+        let body_json = String::from_utf8(serde_json::to_vec(&meta)?)?;
+
+        let mut res = DaHttpResponse::new(200, &body_json);
+        res.headers = BTreeMap::from([
+            ("Access-Control-Allow-Origin".to_string(), vec!["*".to_string()]),
+            ("Content-Type".to_string(), vec!["application/json".to_string()]),
+        ]);
+
+        return Ok(res);
+    }
+    else if path == &format!("{}/oauth/authorize", config.path_prefix) {
 
         let raw_query = format!("{}?{}", path, parsed_url.query().unwrap());
 
@@ -60,7 +94,6 @@ pub fn handle<T: kv::Store>(req: &DaHttpRequest, kv_store: &KvStore<T>, config: 
             client_id
         }
         else {
-            println!("here");
             return send_error_page("Missing client_id param", 400, req, config, templater);
         };
 

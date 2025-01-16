@@ -446,7 +446,9 @@ fn handle<T>(req: DaHttpRequest, kv_store: &KvStore<T>, config: &Config, templat
 
         res
     }
-    else if path.starts_with(&format!("{}/oauth", path_prefix)) {
+    else if path == "/.well-known/oauth-authorization-server" || 
+            path.starts_with(&format!("{}/oauth", path_prefix)) {
+
         oauth::handle(&req, kv_store, &config, templater)?
     }
     else {
