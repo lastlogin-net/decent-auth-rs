@@ -13,11 +13,13 @@ struct OAuth2Metadata<'a> {
     authorization_endpoint: &'a str,
     token_endpoint: &'a str,
     response_types_supported: &'a [&'a str],
+    code_challenge_methods_supported: &'a [&'a str],
 }
 
 #[derive(Serialize)]
 struct TokenResponse<'a> {
     access_token: &'a str,
+    token_type: &'a str,
 }
 
 #[derive(Serialize)]
@@ -62,6 +64,9 @@ pub fn handle<T: kv::Store>(req: &DaHttpRequest, kv_store: &KvStore<T>, config: 
             response_types_supported: &vec![
                 "code",
             ],
+            code_challenge_methods_supported: &vec![
+                "S256",
+            ],
         };
 
         let body_json = String::from_utf8(serde_json::to_vec(&meta)?)?;
@@ -105,7 +110,7 @@ pub fn handle<T: kv::Store>(req: &DaHttpRequest, kv_store: &KvStore<T>, config: 
         }
         else {
             return send_error_page("Missing redirect_uri param", 400, req, config, templater);
-        };
+        }; 
 
         if !redirect_uri.starts_with(client_id) {
             return send_error_page("redirect_uri must be on same domain as client_id", 400, req, config, templater);
@@ -156,8 +161,15 @@ pub fn handle<T: kv::Store>(req: &DaHttpRequest, kv_store: &KvStore<T>, config: 
             return send_error_page("Missing redirect_uri param", 400, req, config, templater);
         };
 
+        let state = if let Some(state) = auth_params.get("state") {
+            state
+        }
+        else {
+            return send_error_page("Missing state param", 400, req, config, templater);
+        };
+
         let code = generate_random_text();
-        let location = format!("{}?code={}", redirect_uri, code);
+        let location = format!("{}?code={}&state={}", redirect_uri, code, state);
 
         let key = format!("/{}/pending_oauth_code/{}", config.storage_prefix, code);
         kv_store.set(&key, session)?; 
@@ -199,6 +211,7 @@ pub fn handle<T: kv::Store>(req: &DaHttpRequest, kv_store: &KvStore<T>, config: 
 
         let token_res = TokenResponse{
             access_token: &token,
+            token_type: "bearer",
         };
 
         let body_json = String::from_utf8(serde_json::to_vec(&token_res)?)?;
