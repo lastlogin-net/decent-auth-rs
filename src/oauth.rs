@@ -85,9 +85,7 @@ pub fn handle<T: kv::Store>(req: &DaHttpRequest, kv_store: &KvStore<T>, config: 
 
         if get_session(&req, &kv_store, config).is_none() {
             let mut res = DaHttpResponse::new(303, "");
-            //let ret = urlencoding::encode(&req.url);
-            // TODO: I think we need to do nested return_target here
-            let uri = format!("{}?return_target={}", config.path_prefix, raw_query);
+            let uri = format!("{}?return_target={}", config.path_prefix, urlencoding::encode(&raw_query));
             res.headers = BTreeMap::from([
                 ("Location".to_string(), vec![uri]),
             ]);
