@@ -2,7 +2,7 @@ use std::collections::{HashMap,BTreeMap};
 use serde::{Serialize,Deserialize};
 use extism_pdk::{host_fn};
 use crate::{
-    DaHttpRequest,DaHttpResponse,KvStore,Config,error,kv,Url,DaError,
+    DaHttpRequest,DaHttpResponse,KvStore,Config,error,kv,get_host,
     parse_params,Session,SESSION_PREFIX,generate_random_key, get_return_target,
     create_session_cookie,SessionBuilder,IdType,email, generate_random_text,template,
 };
@@ -69,8 +69,7 @@ pub fn send_email(msg: Message, smtp_config: &SmtpConfig) {
 pub fn handle_login<T>(req: &DaHttpRequest, kv_store: &KvStore<T>, config: &Config, templater: &template::Templater) -> error::Result<DaHttpResponse> 
 where T: kv::Store,
 {
-    let parsed_url = Url::parse(&req.url)?; 
-    let host = parsed_url.host().ok_or(DaError::new("Failed to parse host"))?;
+    let host = get_host(req, config)?;
 
     let params = parse_params(&req).unwrap_or(HashMap::new());
 

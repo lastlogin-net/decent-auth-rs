@@ -3,7 +3,7 @@ use crate::{
     error,DaHttpResponse,Method,HeaderMap,HeaderValue,
     HttpRequest,Url,Serialize,Deserialize,DaError,KvStore,Config,kv,
     parse_params,DaHttpRequest,generate_random_text,SessionBuilder,IdType,
-    SESSION_PREFIX,get_return_target,
+    SESSION_PREFIX,get_return_target,get_host,
     create_session_cookie,
     template,Templater
 };
@@ -43,7 +43,6 @@ struct CredentialsResponse {
 
 pub fn handle_login<T: kv::Store>(req: &DaHttpRequest, kv_store: &KvStore<T>, config: &Config, templater: &Templater) -> error::Result<DaHttpResponse> {
 
-    let parsed_url = Url::parse(&req.url)?; 
     let params = parse_params(&req).unwrap_or(HashMap::new());
 
     if let Some(fediverse_handle) = params.get("handle") {
@@ -65,7 +64,7 @@ pub fn handle_login<T: kv::Store>(req: &DaHttpRequest, kv_store: &KvStore<T>, co
             return Ok(DaHttpResponse::new(400, &format!("Currently only support Mastodon OAuth")));
         }
 
-        let host = parsed_url.host().ok_or(DaError::new("Failed to parse host"))?;
+        let host = get_host(req, config)?;
         let key = format!("/{}/{}/{}/{}", config.storage_prefix, "apps", server, host);
 
         let app_res: Result<MastodonApp, kv::Error> = kv_store.get(&key);

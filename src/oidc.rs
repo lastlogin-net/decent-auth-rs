@@ -2,7 +2,7 @@ use std::collections::{HashMap,BTreeMap};
 use crate::{
     get_return_target,DaHttpResponse,OAUTH_STATE_PREFIX,KvStore,
     DaHttpRequest,kv,error,SESSION_PREFIX,SessionBuilder,IdType,Config,DaError,
-    create_session_cookie,
+    create_session_cookie,get_host,
 };
 use openidconnect::{
     Scope,PkceCodeChallenge,Nonce,CsrfToken,TokenResponse,PkceCodeVerifier,
@@ -25,11 +25,9 @@ pub struct FlowState {
     pub provider_uri: String,
 }
 
-pub fn handle_login<T: kv::Store>(req: &DaHttpRequest, kv_store: &KvStore<T>, storage_prefix: &str, path_prefix: &str, provider_uri: &str) -> error::Result<DaHttpResponse> {
+pub fn handle_login<T: kv::Store>(req: &DaHttpRequest, kv_store: &KvStore<T>, config: &Config, provider_uri: &str) -> error::Result<DaHttpResponse> {
 
-    let parsed_url = Url::parse(&req.url)?; 
-
-    let client = get_client(provider_uri, &path_prefix, &parsed_url)?;
+    let client = get_client(req, config, provider_uri, &config.path_prefix)?;
 
     let (pkce_challenge, pkce_verifier) = PkceCodeChallenge::new_random_sha256();
 
@@ -51,7 +49,7 @@ pub fn handle_login<T: kv::Store>(req: &DaHttpRequest, kv_store: &KvStore<T>, st
         provider_uri: provider_uri.to_string(),
     };
 
-    let state_key = format!("/{}/{}/{}", storage_prefix, OAUTH_STATE_PREFIX, csrf_token.secret());
+    let state_key = format!("/{}/{}/{}", config.storage_prefix, OAUTH_STATE_PREFIX, csrf_token.secret());
     kv_store.set(&state_key, flow_state)?;
 
     let mut res = DaHttpResponse::new(303, "Hi there");
@@ -77,7 +75,7 @@ pub fn handle_callback<T: kv::Store>(req: &DaHttpRequest, kv_store: &KvStore<T>,
 
     let code = hash_query.get("code").ok_or(DaError::new("Missing code param"))?;
 
-    let client = get_client(&flow_state.provider_uri, &config.path_prefix, &parsed_url)?;
+    let client = get_client(req, config, &flow_state.provider_uri, &config.path_prefix)?;
 
     let token_response =
         client
@@ -109,13 +107,13 @@ pub fn handle_callback<T: kv::Store>(req: &DaHttpRequest, kv_store: &KvStore<T>,
     Ok(res)
 }
 
-fn get_client(provider_url: &str, path_prefix: &str, parsed_url: &Url) -> error::Result<CoreClient> {
+fn get_client(req: &DaHttpRequest, config: &Config, provider_url: &str, path_prefix: &str) -> error::Result<CoreClient> {
     let provider_metadata = CoreProviderMetadata::discover(
         &IssuerUrl::new(provider_url.to_string())?,
         http_client,
     )?;
 
-    let host = parsed_url.host().ok_or(DaError::new("Missing host"))?;
+    let host = get_host(req, config)?;
 
     let uri = format!("https://{host}{path_prefix}/callback");
     let client =

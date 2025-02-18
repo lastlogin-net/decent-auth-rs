@@ -1,9 +1,9 @@
 use std::collections::{HashMap,BTreeMap};
 use std::sync::Arc;
 use crate::{
-    DaHttpRequest,DaHttpResponse,KvStore,Config,error,kv,Url,DaError,
+    DaHttpRequest,DaHttpResponse,KvStore,Config,error,kv,DaError,
     parse_params,Session,SESSION_PREFIX,generate_random_text, get_return_target,
-    create_session_cookie,SessionBuilder,IdType,template,Templater
+    create_session_cookie,SessionBuilder,IdType,template,Templater,get_host,
 };
 use serde::{Serialize,Deserialize};
 
@@ -171,8 +171,7 @@ pub fn handle_callback<T: kv::Store>(req: &DaHttpRequest, kv_store: &KvStore<T>,
 
 pub fn handle_client_metadata<T: kv::Store>(req: &DaHttpRequest, _kv_store: &KvStore<T>, config: &Config) -> error::Result<DaHttpResponse> {
 
-    let parsed_url = Url::parse(&req.url)?; 
-    let host = parsed_url.host().ok_or(DaError::new("Failed to parse host"))?;
+    let host = get_host(req, config)?;
     let root_uri = format!("https://{}", host);
     let meta_uri = format!("{}{}/atproto-client-metadata.json", root_uri, config.path_prefix);
     let redirect_uri = format!("{}{}/atproto-callback", root_uri, config.path_prefix);
@@ -365,8 +364,7 @@ fn get_async_runtime() -> Result<tokio::runtime::Runtime, std::io::Error> {
 fn get_client<'a, T>(req: &DaHttpRequest, kv_store: &'a KvStore<T>, config: &Config) -> error::Result<DaOAuthClient<'a, T>>
 where T: kv::Store,
 {
-    let parsed_url = Url::parse(&req.url)?; 
-    let host = parsed_url.host().ok_or(DaError::new("Failed to parse host"))?;
+    let host = get_host(req, config)?;
 
     let shared_http_client = Arc::new(AtHttpClient::default());
     let http_client = AtHttpClient::default();

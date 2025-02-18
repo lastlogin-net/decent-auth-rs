@@ -40,6 +40,7 @@ pub struct Config {
     pub storage_prefix: String,
     #[serde(default = "default_path_prefix")]
     pub path_prefix: String,
+    pub behind_proxy: bool,
     pub admin_id: Option<String>,
     pub id_header_name: Option<String>,
     pub login_methods: Option<Vec<LoginMethod>>,
@@ -366,6 +367,14 @@ fn handle<T>(req: DaHttpRequest, kv_store: &KvStore<T>, config: &Config, templat
 
         res
     }
+    else if path == "/" {
+        let mut res = DaHttpResponse::new(303, "Redirecting...");
+        res.headers = BTreeMap::from([
+            ("Location".to_string(), vec![format!("{}/", path_prefix)]),
+        ]);
+
+        res
+    }
     else if path == format!("{}/login", path_prefix) {
         let params = parse_params(&req).unwrap_or(HashMap::new());
 
@@ -377,7 +386,7 @@ fn handle<T>(req: DaHttpRequest, kv_store: &KvStore<T>, config: &Config, templat
                 OIDC_STR => {
                     let oidc_provider = params.get("oidc_provider");
                     if let Some(oidc_provider) = oidc_provider {
-                        return oidc::handle_login(&req, kv_store, &storage_prefix, &path_prefix, &oidc_provider);
+                        return oidc::handle_login(&req, kv_store, config, &oidc_provider);
                     }
                     else {
                         return Ok(DaHttpResponse::new(400, "Missing OIDC provider"));
@@ -490,6 +499,22 @@ fn send_error_page(message: &str, code: u16, req: &DaHttpRequest, config: &Confi
     ]);
 
     return Ok(res);
+}
+
+fn get_host(req: &DaHttpRequest, config: &Config) -> error::Result<String> {
+    if config.behind_proxy {
+        if let Some(xfh) = req.headers.get("x-forwarded-host") {
+            if xfh.len() > 0 {
+                return Ok(xfh[0].clone());
+            }
+        }
+        Ok("".to_string())
+    }
+    else {
+        let parsed_url = Url::parse(&req.url)?; 
+        let host = parsed_url.host_str().ok_or(DaError::new("Failed to parse host"))?;
+        Ok(host.to_string())
+    }
 }
 
 //const MAX_SESSION_AGE: i64 = 86400;

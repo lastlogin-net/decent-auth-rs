@@ -32,6 +32,7 @@ async fn main() {
         runtime: Some("Rust".to_string()),
         storage_prefix: "decent_auth".to_string(),
         path_prefix: path_prefix.to_string(),
+        behind_proxy: true,
         admin_id: Some(admin_id),
         id_header_name: None,
         login_methods: vec![

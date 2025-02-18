@@ -1,7 +1,7 @@
 use crate::{
     DaHttpRequest,KvStore,Config,Templater,DaHttpResponse,kv,error,
     parse_params,generate_random_text,get_session,SessionBuilder,SESSION_PREFIX,
-    get_return_target,template,DaError,Session,send_error_page,
+    get_return_target,template,DaError,Session,send_error_page,get_host,
 };
 use std::collections::{HashMap,BTreeMap};
 use url::Url;
@@ -52,7 +52,7 @@ pub fn handle<T: kv::Store>(req: &DaHttpRequest, kv_store: &KvStore<T>, config: 
 
     if path == "/.well-known/oauth-authorization-server" {
 
-        let host = parsed_url.host_str().unwrap();
+        let host = get_host(req, config)?;
 
         // TODO: handle localhost
         let issuer = format!("https://{}", host);

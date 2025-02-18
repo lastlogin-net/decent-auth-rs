@@ -1,7 +1,7 @@
 use crate::{
     DaHttpRequest,DaHttpResponse,error,kv,KvStore,Config, get_return_target,get_session,
-    Session,SessionBuilder,DaError,generate_random_text,parse_params,
-    create_session_cookie,SESSION_PREFIX,template,Templater
+    Session,SessionBuilder,generate_random_text,parse_params,
+    create_session_cookie,SESSION_PREFIX,template,Templater,get_host,
 };
 use url::Url;
 use std::collections::{HashMap,BTreeMap};
@@ -19,11 +19,9 @@ struct PendingQrData {
 pub fn handle_login<T>(req: &DaHttpRequest, kv_store: &KvStore<T>, config: &Config, templater: &Templater) -> error::Result<DaHttpResponse> 
     where T: kv::Store,
 {
-    let parsed_url = Url::parse(&req.url)?; 
-
     let qr_key = generate_random_text();
 
-    let host = parsed_url.host().ok_or(DaError::new("Failed to parse host"))?;
+    let host = get_host(req, config)?;
 
     let qr_url = format!("https://{}{}/qr?key={}", host, config.path_prefix, qr_key);
 
