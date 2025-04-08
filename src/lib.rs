@@ -480,6 +480,7 @@ fn create_session_cookie<'a>(storage_prefix: &'a str, session_key: &'a str) -> C
         .path("/")
         .secure(true)
         .http_only(true)
+        .max_age(cookie::time::Duration::weeks(4))
         .same_site(SameSite::Lax)
 }
 
