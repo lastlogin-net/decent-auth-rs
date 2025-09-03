@@ -19,13 +19,16 @@ struct PendingQrData {
 pub fn handle_login<T>(req: &DaHttpRequest, kv_store: &KvStore<T>, config: &Config, templater: &Templater) -> error::Result<DaHttpResponse> 
     where T: kv::Store,
 {
+    // TODO: this key is being reused for multiple purposes on multiple devices. We should have 2
+    // separate keys, and the one used to retrieve the final session should never exist anywhere
+    // other than the device that is logging in.
     let qr_key = generate_random_text();
 
     let host = get_host(req, config)?;
 
     let qr_url = format!("https://{}{}/qr?key={}", host, config.path_prefix, qr_key);
 
-    let code = QrCode::new(qr_url);
+    let code = QrCode::new(&qr_url);
     let qr_svg = code?.render()
         .min_dimensions(200, 200)
         .dark_color(svg::Color("#000000"))
@@ -37,6 +40,7 @@ pub fn handle_login<T>(req: &DaHttpRequest, kv_store: &KvStore<T>, config: &Conf
         return_target: get_return_target(&req),
         qr_svg,
         qr_key: qr_key.clone(),
+        qr_url: qr_url,
     };
     let body = templater.render_qr_code_page(&data)?;
 
@@ -86,6 +90,7 @@ pub fn handle<T: kv::Store>(req: &DaHttpRequest, kv_store: &KvStore<T>, config: 
             return Ok(res);
         }
 
+        // TODO: is this duplication with the code above necessary?
         let qr_key = if let Some(key) = params.get("key") {
             key
         }

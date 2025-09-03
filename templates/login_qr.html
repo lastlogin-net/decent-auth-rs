@@ -10,6 +10,14 @@
   {{{qr_svg}}}
 </div>
 
+<p>
+  Or send this URL to a logged-in device:
+</p>
+<p>
+  {{qr_url}}
+</p>
+
+
 <form action='{{path_prefix}}/qr/finalize' method='POST'>
   <input type='hidden' name='key' value='{{qr_key}}' />
   <button class='formbutton' type='submit'>

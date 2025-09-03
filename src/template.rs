@@ -31,6 +31,7 @@ pub struct TemplateData {
     method_type: String,
     qr_key: String,
     qr_svg: String,
+    qr_url: String,
     pkce_code_challenge: String,
     pkce_code_verifier: String,
     runtime: String,
@@ -59,6 +60,7 @@ impl DataBuilder {
                 login_methods,
                 qr_key: "".to_string(),
                 qr_svg: "".to_string(),
+                qr_url: "".to_string(),
                 pkce_code_challenge: "".to_string(),
                 pkce_code_verifier: "".to_string(),
                 runtime: config.runtime.clone().unwrap_or("".to_string()),
@@ -91,6 +93,11 @@ impl DataBuilder {
 
     pub fn qr_svg(mut self, val: &str) -> Self {
         self.td.qr_svg = val.to_string();
+        self
+    }
+
+    pub fn qr_url(mut self, val: &str) -> Self {
+        self.td.qr_url = val.to_string();
         self
     }
 
@@ -142,6 +149,7 @@ pub struct QrData<'a>{
     pub return_target: String,
     pub qr_svg: String,
     pub qr_key: String,
+    pub qr_url: String,
 }
 
 pub struct QrLinkData<'a>{
@@ -302,6 +310,7 @@ impl Templater {
             .method_type(QR_CODE_STR)
             .qr_key(&data.qr_key)
             .qr_svg(&data.qr_svg)
+            .qr_url(&data.qr_url)
             .build();
         self.render_common("login_qr.html", &data)
     }
