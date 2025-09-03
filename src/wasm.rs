@@ -1,6 +1,7 @@
 use crate::{
     KvStore,get_session,DaError,Session,handle,DaHttpRequest,DaHttpResponse,
     Config,error,kv,template::Templater,
+    session::{create_session,CreateSessionRequest,CreateSessionResult},
 };
 use openidconnect::{
     HttpRequest,HttpResponse,
@@ -137,4 +138,18 @@ pub extern "C" fn extism_get_session(Json(req): Json<DaHttpRequest>) -> FnResult
     let session = get_session(&req, &kv_store, &config);
 
     Ok(Json(session))
+}
+
+#[plugin_fn]
+pub extern "C" fn extism_create_session(Json(session_req): Json<CreateSessionRequest>) -> FnResult<Json<CreateSessionResult>> {
+
+    let kv_store = KvStore{
+        byte_kv: ExtismKv{},
+    };
+
+    let config = get_config().map_err(|_| DaError::new("Failed to get config"))?;
+
+    let session_result = create_session(&kv_store, &config, &session_req)?;
+
+    Ok(Json(session_result))
 }
