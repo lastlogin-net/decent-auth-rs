@@ -340,54 +340,50 @@ fn handle<T>(req: DaHttpRequest, kv_store: &KvStore<T>, config: &Config, templat
 
     let path = parsed_url.path();
 
+    let params = parse_params(&req).unwrap_or(HashMap::new());
+
     let res = if path == path_prefix || path == format!("{}/", path_prefix) { 
+        let body = match session {
+            Some(session) => {
+                let data = template::IndexPageData{
+                    config,
+                    return_target: get_return_target(&req),
+                    id: session.id,
+                };
+                let body = templater.render_index_page(&data)?;
+                body
+            },
+            None => {
+                let data = template::CommonData{
+                    config,
+                    return_target: get_return_target(&req),
+                };
+                let body = templater.render_login_page(&data)?;
+                body
+            }
+        };
 
-        let params = parse_params(&req).unwrap_or(HashMap::new());
+        let mut res = DaHttpResponse::new(200, &body);
+        res.headers = BTreeMap::from([
+            ("Content-Type".to_string(), vec!["text/html".to_string()]),
+        ]);
 
-        if let Some(code) = params.get("k") {
-            let code_kv_key = format!("/{}/{}/{}", config.storage_prefix, CODES_PREFIX, code);
-            let session_key: String = kv_store.get(&code_kv_key)?;
-            kv_store.delete(&code_kv_key)?;
+        res
+    }
+    else if let Some(code) = params.get("k") {
+        let code_kv_key = format!("/{}/{}/{}", config.storage_prefix, CODES_PREFIX, code);
+        let session_key: String = kv_store.get(&code_kv_key)?;
+        kv_store.delete(&code_kv_key)?;
 
-            let session_cookie = create_session_cookie(&config.storage_prefix, &session_key);
+        let session_cookie = create_session_cookie(&config.storage_prefix, &session_key);
 
-            let mut res = DaHttpResponse::new(303, "Redirecting...");
-            res.headers = BTreeMap::from([
-                ("Location".to_string(), vec!["/".to_string()]),
-                ("Set-Cookie".to_string(), vec![session_cookie.to_string()]),
-            ]);
+        let mut res = DaHttpResponse::new(303, "Redirecting...");
+        res.headers = BTreeMap::from([
+            ("Location".to_string(), vec!["/".to_string()]),
+            ("Set-Cookie".to_string(), vec![session_cookie.to_string()]),
+        ]);
 
-            res
-        }
-        else {
-
-            let body = match session {
-                Some(session) => {
-                    let data = template::IndexPageData{
-                        config,
-                        return_target: get_return_target(&req),
-                        id: session.id,
-                    };
-                    let body = templater.render_index_page(&data)?;
-                    body
-                },
-                None => {
-                    let data = template::CommonData{
-                        config,
-                        return_target: get_return_target(&req),
-                    };
-                    let body = templater.render_login_page(&data)?;
-                    body
-                }
-            };
-
-            let mut res = DaHttpResponse::new(200, &body);
-            res.headers = BTreeMap::from([
-                ("Content-Type".to_string(), vec!["text/html".to_string()]),
-            ]);
-
-            res
-        }
+        res
     }
     else if path == "/" {
         let mut res = DaHttpResponse::new(303, "Redirecting...");
