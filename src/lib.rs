@@ -269,6 +269,18 @@ fn get_session<T: kv::Store>(req: &DaHttpRequest, kv_store: &KvStore<T>, config:
         }
     } 
 
+    if let Some(header_val) = req.headers.get("authorization") {
+        let parts = header_val[0].split(" ").collect::<Vec<_>>();
+
+        if parts.len() == 2 && parts[0].trim().to_lowercase() == "bearer" {
+            let token = parts[1].trim();
+            let session_key = format!("/{}/{}/{}", config.storage_prefix, SESSION_PREFIX, &token);
+            if let Ok(session) = kv_store.get(&session_key) {
+                return Some(session);
+            }
+        }
+    }
+
     let params = parse_params(&req).unwrap_or(HashMap::new());
 
     if let Some(token) = params.get("access_token") {
