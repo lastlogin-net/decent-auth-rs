@@ -119,11 +119,13 @@ pub extern "C" fn extism_handle(Json(req): Json<DaHttpRequest>) -> FnResult<Json
 
     let result = handle(req, &kv_store, &config, &templater);
 
-    if let Ok(res) = result {
-        Ok(Json(res))
-    }
-    else {
-        Err(extism_pdk::Error::msg("call to handle failed").into())
+    match result {
+        Ok(res) => {
+            Ok(Json(res))
+        },
+        Err(err) => {
+            Err(extism_pdk::Error::msg(err.to_string()).into())
+        }
     }
 }
 
