@@ -1,5 +1,7 @@
+use std::collections::HashMap;
+use chrono::Utc;
 use crate::{
-    generate_random_text,Config,SESSION_PREFIX,CODES_PREFIX,KvStore,kv,IdType,SessionBuilder,EMAIL_STR,
+    generate_random_text,Config,SESSION_PREFIX,CODES_PREFIX,KvStore,kv,IdType,EMAIL_STR,Session
 };
 use serde::{Serialize,Deserialize};
 
@@ -7,6 +9,7 @@ use serde::{Serialize,Deserialize};
 pub struct CreateSessionRequest {
     id: String,
     id_type: String,
+    custom_data: Option<HashMap<String, String>>,
 }
 
 #[derive(Debug,Serialize)]
@@ -23,7 +26,12 @@ pub fn create_session<T: kv::Store>(kv_store: &KvStore<T>, config: &Config, req:
         &_ => todo!(),
     };
 
-    let session = SessionBuilder::new(id_type, &req.id).build();
+    let session = Session{
+        id: req.id.clone(),
+        id_type,
+        custom_data: req.custom_data.clone(),
+        created_at: Utc::now(),
+    };
 
     let session_key = generate_random_text();
     let kv_session_key = format!("/{}/{}/{}", config.storage_prefix, SESSION_PREFIX, &session_key);

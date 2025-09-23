@@ -203,6 +203,8 @@ impl From<openidconnect::http::header::InvalidHeaderValue> for DaError {
 pub struct Session {
     id: String,
     id_type: IdType,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    custom_data: Option<HashMap<String, String>>,
     created_at: DateTime<Utc>,
 }
 
@@ -216,6 +218,7 @@ enum IdType {
 pub struct SessionBuilder {
     id: String,
     id_type: IdType,
+    custom_data: Option<HashMap<String, String>>,
 }
 
 impl SessionBuilder {
@@ -223,7 +226,13 @@ impl SessionBuilder {
         Self{
             id_type,
             id: id.to_string(),
+            custom_data: None,
         }
+    }
+
+    pub fn custom_data(mut self, custom_data: HashMap<String, String>) -> SessionBuilder {
+        self.custom_data = Some(custom_data);
+        self
     }
 
     fn build(self) -> Session {
@@ -233,6 +242,7 @@ impl SessionBuilder {
         Session{
             id_type: self.id_type,
             id: self.id,
+            custom_data: self.custom_data,
             created_at: utc,
         }
     }
