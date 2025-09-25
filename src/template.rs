@@ -37,6 +37,7 @@ pub struct TemplateData {
     runtime: String,
     client_id: String,
     auth_url: String,
+    query: String,
     message: String,
 }
 
@@ -66,6 +67,7 @@ impl DataBuilder {
                 runtime: config.runtime.clone().unwrap_or("".to_string()),
                 client_id: "".to_string(),
                 auth_url: "".to_string(),
+                query: "".to_string(),
                 message: "".to_string(),
             },
         }
@@ -121,6 +123,11 @@ impl DataBuilder {
         self
     }
 
+    pub fn query(mut self, val: &str) -> Self {
+        self.td.query = val.to_string();
+        self
+    }
+
     pub fn message(mut self, val: &str) -> Self {
         self.td.message = val.to_string();
         self
@@ -170,6 +177,7 @@ pub struct OAuth2Data<'a> {
     pub return_target: String,
     pub auth_url: &'a str,
     pub client_id: &'a str,
+    pub query: &'a str,
 }
 
 pub struct ErrorData<'a> {
@@ -363,6 +371,7 @@ impl Templater {
             .return_target(&data.return_target)
             .client_id(&data.client_id)
             .auth_url(&data.auth_url)
+            .query(&data.query)
             .build();
         self.render_common("approve_oauth.html", &data)
     }

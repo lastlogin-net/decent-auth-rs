@@ -81,6 +81,13 @@ pub fn handle<T: kv::Store>(req: &DaHttpRequest, kv_store: &KvStore<T>, config: 
     }
     else if path == &format!("{}/oauth/authorize", config.path_prefix) {
 
+        let query = if let Some(query) = parsed_url.query() {
+            query
+        }
+        else {
+            return send_error_page("missing query", 400, req, config, templater);
+        };
+
         let raw_query = format!("{}?{}", path, parsed_url.query().unwrap());
 
         if get_session(&req, &kv_store, config).is_none() {
@@ -114,12 +121,12 @@ pub fn handle<T: kv::Store>(req: &DaHttpRequest, kv_store: &KvStore<T>, config: 
             return send_error_page("redirect_uri must be on same domain as client_id", 400, req, config, templater);
         }
 
-
         let data = template::OAuth2Data{
             config,
             return_target: get_return_target(&req),
             auth_url: &req.url,
             client_id: &client_id_host.to_string(),
+            query,
         };
         let body = templater.render_oauth_authorize_page(&data)?;
 
@@ -132,12 +139,13 @@ pub fn handle<T: kv::Store>(req: &DaHttpRequest, kv_store: &KvStore<T>, config: 
     }
     else if path == &format!("{}/oauth/approve", config.path_prefix) {
 
-        let auth_url = params.get("auth_url").unwrap();
-        let parsed_auth_url = Url::parse(auth_url)?; 
+        //let auth_url = params.get("auth_url").unwrap();
+        //let parsed_auth_url = Url::parse(auth_url)?; 
+        let parsed_auth_url = parsed_url.clone(); 
 
         let auth_params: HashMap<_, _> = parsed_auth_url.query_pairs().into_owned().collect();
 
-        let session = if let Some(session) = get_session(&req, &kv_store, config) {
+        let mut session = if let Some(session) = get_session(&req, &kv_store, config) {
             session
         }
         else {
@@ -159,6 +167,17 @@ pub fn handle<T: kv::Store>(req: &DaHttpRequest, kv_store: &KvStore<T>, config: 
             return send_error_page("Missing redirect_uri param", 400, req, config, templater);
         };
 
+        let client_id = if let Some(client_id) = params.get("client_id") {
+            client_id
+        }
+        else {
+            return send_error_page("Missing client_id param", 400, req, config, templater);
+        };
+
+        if !redirect_uri.starts_with(client_id) {
+            return send_error_page("redirect_uri must be on same domain as client_id", 400, req, config, templater);
+        }
+
         let state = if let Some(state) = auth_params.get("state") {
             state
         }
@@ -168,6 +187,13 @@ pub fn handle<T: kv::Store>(req: &DaHttpRequest, kv_store: &KvStore<T>, config: 
 
         let code = generate_random_text();
         let location = format!("{}?code={}&state={}", redirect_uri, code, state);
+
+        if let Ok(parsed_body) = Url::parse(&format!("http://example.com/?{}", &req.body)) {
+            let hash_query: HashMap<_, _> = parsed_body.query_pairs().into_owned().collect();
+            if hash_query.len() > 0 {
+                session.custom_data = Some(hash_query);
+            }
+        }
 
         let key = format!("/{}/pending_oauth_code/{}", config.storage_prefix, code);
         kv_store.set(&key, session)?; 
@@ -200,8 +226,12 @@ pub fn handle<T: kv::Store>(req: &DaHttpRequest, kv_store: &KvStore<T>, config: 
 
         let token = generate_random_text();
         let kv_session_key = format!("/{}/{}/{}", config.storage_prefix, SESSION_PREFIX, token);
-        let new_session = SessionBuilder::new(session.id_type, &session.id)
-            .build();
+        let mut new_session_builder = SessionBuilder::new(session.id_type, &session.id);
+        new_session_builder = match session.custom_data {
+            Some(cd) => new_session_builder.custom_data(cd),
+            None => new_session_builder,
+        };
+        let new_session = new_session_builder.build();
 
         if kv_store.set(&kv_session_key, &new_session).is_err() {
             return send_error_json("Failed to create session", 500);
