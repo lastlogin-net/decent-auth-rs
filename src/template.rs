@@ -4,7 +4,8 @@ use crate::{
     error,DaError,LoginMethod,ATPROTO_STR,FEDIVERSE_STR,ADMIN_CODE_STR,
     QR_CODE_STR,OIDC_STR,EMAIL_STR,FEDCM_STR,Config,
 };
-use ramhorns::Ramhorns;
+use ramhorns::Template;
+use std::collections::HashMap;
 
 const HEADER_TMPL: &str = include_str!("../templates/header.html");
 const FOOTER_TMPL: &str = include_str!("../templates/footer.html");
@@ -233,32 +234,37 @@ impl From<LoginMethod> for InternalLoginMethod {
 }
 
 pub struct Templater {
-    ramhorns: Ramhorns,
+    templates: HashMap<&'static str, Template<'static>>,
 }
 
 impl Templater {
     pub fn new() -> Self {
+        // All templates are embedded for WASM, where loading partials from a
+        // filesystem is not available. Expand the two shared partials before
+        // parsing, so we can use the published ramhorns crate without a fork.
+        let templates = [
+            ("index.html", INDEX_TMPL),
+            ("login.html", LOGIN_TMPL),
+            ("login_atproto.html", LOGIN_ATPROTO_TMPL),
+            ("login_fediverse.html", LOGIN_FEDIVERSE_TMPL),
+            ("login_admin_code.html", LOGIN_ADMIN_CODE_TMPL),
+            ("login_qr.html", LOGIN_QR_CODE_TMPL),
+            ("qr_link.html", QR_LINK_TMPL),
+            ("qr_approved.html", QR_APPROVED_TMPL),
+            ("login_email.html", LOGIN_EMAIL_TMPL),
+            ("approve_code.html", APPROVE_CODE_TMPL),
+            ("login_fedcm.html", LOGIN_FEDCM_TMPL),
+            ("approve_oauth.html", APPROVE_OAUTH_TMPL),
+            ("error.html", ERROR_TMPL),
+        ].into_iter().map(|(name, source)| {
+            let expanded = source
+                .replace("{{> header.html}}", HEADER_TMPL)
+                .replace("{{> footer.html}}", FOOTER_TMPL);
+            assert!(!expanded.contains("{{>"), "unexpected partial in {name}");
+            (name, Template::new(expanded).expect("Failed to parse template"))
+        }).collect();
 
-        let mut ramhorns = Ramhorns::new();
-        ramhorns.insert(HEADER_TMPL, "header.html").expect("Failed to get template");
-        ramhorns.insert(FOOTER_TMPL, "footer.html").expect("Failed to get template");
-        ramhorns.insert(INDEX_TMPL, "index.html").expect("Failed to get template");
-        ramhorns.insert(LOGIN_TMPL, "login.html").expect("Failed to get template");
-        ramhorns.insert(LOGIN_ATPROTO_TMPL, "login_atproto.html").expect("Failed to get template");
-        ramhorns.insert(LOGIN_FEDIVERSE_TMPL, "login_fediverse.html").expect("Failed to get template");
-        ramhorns.insert(LOGIN_ADMIN_CODE_TMPL, "login_admin_code.html").expect("Failed to get template");
-        ramhorns.insert(LOGIN_QR_CODE_TMPL, "login_qr.html").expect("Failed to get template");
-        ramhorns.insert(QR_LINK_TMPL, "qr_link.html").expect("Failed to get template");
-        ramhorns.insert(QR_APPROVED_TMPL, "qr_approved.html").expect("Failed to get template");
-        ramhorns.insert(LOGIN_EMAIL_TMPL, "login_email.html").expect("Failed to get template");
-        ramhorns.insert(APPROVE_CODE_TMPL, "approve_code.html").expect("Failed to get template");
-        ramhorns.insert(LOGIN_FEDCM_TMPL, "login_fedcm.html").expect("Failed to get template");
-        ramhorns.insert(APPROVE_OAUTH_TMPL, "approve_oauth.html").expect("Failed to get template");
-        ramhorns.insert(ERROR_TMPL, "error.html").expect("Failed to get template");
-
-        Self{
-            ramhorns,
-        }
+        Self { templates }
     }
 
     pub fn render_index_page(&self, data: &IndexPageData) -> error::Result<String> {
@@ -268,7 +274,7 @@ impl Templater {
             .id(&data.id)
             .build();
 
-        let rendered = self.ramhorns.get("index.html")
+        let rendered = self.templates.get("index.html")
             .ok_or(DaError{msg: "Missing template".to_string()})?.render(&data);
         Ok(rendered)
     }
@@ -377,8 +383,39 @@ impl Templater {
 
     fn render_common(&self, name: &str, data: &TemplateData) -> error::Result<String> {
 
-        let rendered = self.ramhorns.get(name)
+        let rendered = self.templates.get(name)
             .ok_or(DaError{msg: "Missing template".to_string()})?.render(&data);
         Ok(rendered)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn embedded_templates_render_without_a_filesystem() {
+        let config = Config {
+            storage_prefix: "test".into(),
+            path_prefix: "/auth".into(),
+            behind_proxy: false,
+            admin_id: None,
+            id_header_name: None,
+            login_methods: Some(vec![LoginMethod::AtProto]),
+            smtp_config: None,
+            runtime: Some("test backend".into()),
+        };
+        let templater = Templater::new();
+        let data = DataBuilder::new(&config).message("<script>alert(1)</script>").build();
+        for name in templater.templates.keys() {
+            let rendered = templater.render_common(name, &data).unwrap();
+            assert!(rendered.starts_with("<!doctype html>"), "{name}");
+            assert!(rendered.contains("</html>"), "{name}");
+            assert!(rendered.contains("test backend"), "{name}");
+            assert!(!rendered.contains("{{>"), "{name}");
+        }
+        let error_page = templater.render_common("error.html", &data).unwrap();
+        assert!(!error_page.contains("<script>"));
+        assert!(error_page.contains("&lt;script&gt;"));
     }
 }

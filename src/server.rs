@@ -14,7 +14,7 @@ impl<T: kv::Store> Server<T> {
         Self{
             config,
             kv_store: KvStore{
-                byte_kv: kv_store,
+                byte_kv: std::sync::Arc::new(kv_store),
             },
             templater: Templater::new(),
         }

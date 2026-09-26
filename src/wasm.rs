@@ -110,7 +110,7 @@ pub extern "C" fn extism_handle(Json(req): Json<DaHttpRequest>) -> FnResult<Json
     let config = get_config().map_err(|_| DaError::new("Failed to get config for handler"))?;
 
     let kv_store = KvStore{
-        byte_kv: ExtismKv{},
+        byte_kv: std::sync::Arc::new(ExtismKv{}),
     };
 
     // TODO: share memory between invocations so we don't have to create a new templater from
@@ -134,7 +134,7 @@ pub extern "C" fn extism_get_session(Json(req): Json<DaHttpRequest>) -> FnResult
     let config = get_config().map_err(|_| DaError::new("Failed to get config for session"))?;
 
     let kv_store = KvStore{
-        byte_kv: ExtismKv{},
+        byte_kv: std::sync::Arc::new(ExtismKv{}),
     };
 
     let session = get_session(&req, &kv_store, &config);
@@ -146,7 +146,7 @@ pub extern "C" fn extism_get_session(Json(req): Json<DaHttpRequest>) -> FnResult
 pub extern "C" fn extism_create_session(Json(session_req): Json<CreateSessionRequest>) -> FnResult<Json<CreateSessionResult>> {
 
     let kv_store = KvStore{
-        byte_kv: ExtismKv{},
+        byte_kv: std::sync::Arc::new(ExtismKv{}),
     };
 
     let config = get_config().map_err(|_| DaError::new("Failed to get config"))?;

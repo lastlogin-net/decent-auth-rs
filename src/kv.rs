@@ -3,7 +3,7 @@ use std::sync::Mutex;
 use serde::{Serialize,Deserialize};
 use std::collections::HashMap;
 
-pub trait Store: Sync {
+pub trait Store: Send + Sync + 'static {
     fn get(&self, key: &str) -> Result<Vec<u8>, Error>;
     fn set(&self, key: &str, value: Vec<u8>) -> Result<(), Error>;
     fn delete(&self, key: &str) -> Result<(), Error>;
@@ -32,6 +32,7 @@ impl fmt::Display for Error {
 }
 
 
+#[derive(Default)]
 pub struct KvStore {
     map: Mutex<HashMap<String, Vec<u8>>>,
 }

@@ -5,15 +5,15 @@ use crate::{
     parse_params,Session,SESSION_PREFIX,generate_random_text, get_return_target,
     create_session_cookie,SessionBuilder,IdType,template,Templater,get_host,
 };
-use serde::{Serialize,Deserialize};
+use serde::Deserialize;
 
 use atrium_xrpc::HttpClient;
-use atrium_api::types::string::Did;
-use atrium_common::resolver::Resolver;
+use atrium_api::{agent::SessionManager, types::string::Did};
+use atrium_common::{resolver::Resolver, store::Store};
 use atrium_identity::did::{CommonDidResolver, CommonDidResolverConfig, DEFAULT_PLC_DIRECTORY_URL};
 use atrium_identity::handle::{AtprotoHandleResolver, AtprotoHandleResolverConfig, DnsTxtResolver};
-use atrium_oauth_client::store::{SimpleStore,state::{StateStore,InternalStateData}};
-use atrium_oauth_client::{
+use atrium_oauth::store::{session::MemorySessionStore, state::{StateStore, InternalStateData}};
+use atrium_oauth::{
     AuthorizeOptions, KnownScope, OAuthClient,
     OAuthClientConfig, OAuthResolverConfig, Scope, GrantType, AuthMethod,
     AtprotoClientMetadata, OAuthClientMetadata,CallbackParams,
@@ -30,12 +30,7 @@ struct Answer {
     data: String,
 }
 
-#[derive(Debug,Serialize,Deserialize)]
-struct AtPendingAuthRequest {
-    return_target: String,
-}
-
-type DaOAuthClient<'a, T> = OAuthClient<AtKvStore<'a, T>,CommonDidResolver<AtHttpClient>,AtprotoHandleResolver<AtDnsTxtResolver,AtHttpClient>,AtHttpClient>;
+type DaOAuthClient<T> = OAuthClient<AtKvStore<T>, MemorySessionStore, CommonDidResolver<AtHttpClient>, AtprotoHandleResolver<AtDnsTxtResolver, AtHttpClient>, AtHttpClient>;
 
 
 pub fn handle_login<T>(req: &DaHttpRequest, kv_store: &KvStore<T>, config: &Config, templater: &Templater) -> error::Result<DaHttpResponse> 
@@ -48,31 +43,17 @@ where T: kv::Store,
 
         let client = get_client(req, kv_store, config)?;
 
-        let state = generate_random_text();
-        let oauth_state_key = format!("/{}/{}/{}", config.storage_prefix, "atproto_oauth_state", state);
+        let redir_res: Result<String, atrium_oauth::Error> = rt.block_on(async {
 
-        let auth_req = AtPendingAuthRequest{
-            return_target: get_return_target(req),
-        };
-
-        kv_store.set(&oauth_state_key, auth_req)?;
-
-        let redir_res: Result<String, atrium_oauth_client::Error> = rt.block_on(async { 
-
-            let redir_url = client
-                .authorize(
-                    handle_or_server,
-                    AuthorizeOptions {
-                        scopes: vec![
-                            Scope::Known(KnownScope::Atproto),
-                        ],
-                        state: Some(state),
-                        ..Default::default()
-                    }
-                )
-                .await;
-
-            redir_url
+            client.authorize(
+                handle_or_server,
+                AuthorizeOptions {
+                    scopes: vec![Scope::Known(KnownScope::Atproto)],
+                    // Upstream keeps this app state with its own random OAuth nonce.
+                    state: Some(get_return_target(req)),
+                    ..Default::default()
+                },
+            ).await
         });
 
         let redir_url = redir_res?;
@@ -116,22 +97,23 @@ pub fn handle_callback<T: kv::Store>(req: &DaHttpRequest, kv_store: &KvStore<T>,
 
     let client = get_client(req, kv_store, config)?;
 
-    let oauth_state_key = format!("/{}/{}/{}", config.storage_prefix, "atproto_oauth_state", state);
-    let auth_req: AtPendingAuthRequest = kv_store.get(&oauth_state_key)?;
-    let _ = kv_store.delete(&oauth_state_key);
-
     let rt = get_async_runtime()?;
-    let session_res: Result<Session, atrium_oauth_client::Error> = rt.block_on(async {
-        let res = client.callback(callback_params).await?;
+    let session_res: Result<(Session, String), atrium_oauth::Error> = rt.block_on(async {
+        let (res, return_target) = client.callback(callback_params).await?;
+        let return_target = return_target.ok_or_else(||
+            atrium_oauth::Error::Callback("Missing application state".to_string())
+        )?;
 
         let did_resolver = CommonDidResolver::new(CommonDidResolverConfig {
             plc_directory_url: DEFAULT_PLC_DIRECTORY_URL.to_string(),
             http_client: Arc::new(AtHttpClient::default()),
         });
 
-        let did_str = res.sub.clone();
+        let did_str = res.did().await.ok_or_else(||
+            atrium_oauth::Error::Callback("Missing session DID".to_string())
+        )?.to_string();
         let did = Did::new(did_str)
-            .map_err(|_e| atrium_oauth_client::Error::Callback("Failed to create DID".to_string()))?;
+            .map_err(|_e| atrium_oauth::Error::Callback("Failed to create DID".to_string()))?;
         let did_doc = did_resolver.resolve(&did).await?;
 
         let id = match did_doc.also_known_as {
@@ -149,10 +131,10 @@ pub fn handle_callback<T: kv::Store>(req: &DaHttpRequest, kv_store: &KvStore<T>,
         let session = SessionBuilder::new(IdType::AtProto, &id)
             .build();
 
-        Ok(session)
+        Ok((session, return_target))
     });
 
-    let session = session_res?;
+    let (session, return_target) = session_res?;
 
     let session_key = generate_random_text();
     let session_cookie = create_session_cookie(&config.storage_prefix, &session_key);
@@ -162,7 +144,7 @@ pub fn handle_callback<T: kv::Store>(req: &DaHttpRequest, kv_store: &KvStore<T>,
 
     let mut res = DaHttpResponse::new(303, "");
     res.headers = BTreeMap::from([
-        ("Location".to_string(), vec![auth_req.return_target]),
+        ("Location".to_string(), vec![return_target]),
         ("Set-Cookie".to_string(), vec![session_cookie.to_string()])
     ]);
 
@@ -309,38 +291,44 @@ impl Default for AtHttpClient {
     }
 }
 
-struct AtKvStore<'a, T: kv::Store> {
-    kv_store: &'a KvStore<T>,
+struct AtKvStore<T: kv::Store> {
+    byte_kv: Arc<T>,
+    prefix: String,
 }
 
-impl<T> StateStore for AtKvStore<'_, T>
-where
-    T: kv::Store,
-{
+impl<T: kv::Store> AtKvStore<T> {
+    fn key(&self, state: &str) -> String {
+        format!("{}{state}", self.prefix)
+    }
 }
 
-impl<T> SimpleStore<String, InternalStateData> for AtKvStore<'_, T>
-where
-    T: kv::Store,
-{
+impl<T: kv::Store> StateStore for AtKvStore<T> {}
+
+impl<T: kv::Store> Store<String, InternalStateData> for AtKvStore<T> {
     type Error = kv::Error;
 
     async fn get(&self, key: &String) -> Result<Option<InternalStateData>, Self::Error> {
-        let res = self.kv_store.get(key);
-        Ok(Some(res?))
+        let key = self.key(key);
+        // Our KV trait has no get-optional operation. Check for an exact key
+        // before reading; an unrelated key sharing the prefix is not a hit.
+        if !self.byte_kv.list(&key)?.iter().any(|item| item == &key) {
+            return Ok(None);
+        }
+        Ok(Some(serde_json::from_slice(&self.byte_kv.get(&key)?)?))
     }
 
     async fn set(&self, key: String, value: InternalStateData) -> Result<(), Self::Error> {
-        Ok(self.kv_store.set(&key, value)?)
+        self.byte_kv.set(&self.key(&key), serde_json::to_vec(&value)?)
     }
 
-    async fn del(&self, _key: &String) -> Result<(), Self::Error> {
-        // currently no op
-        Ok(())
+    async fn del(&self, key: &String) -> Result<(), Self::Error> {
+        self.byte_kv.delete(&self.key(key))
     }
 
     async fn clear(&self) -> Result<(), Self::Error> {
-        // currently no op
+        for key in self.byte_kv.list(&self.prefix)? {
+            self.byte_kv.delete(&key)?;
+        }
         Ok(())
     }
 }
@@ -361,7 +349,7 @@ fn get_async_runtime() -> Result<tokio::runtime::Runtime, std::io::Error> {
     Ok(rt)
 }
 
-fn get_client<'a, T>(req: &DaHttpRequest, kv_store: &'a KvStore<T>, config: &Config) -> error::Result<DaOAuthClient<'a, T>>
+fn get_client<T>(req: &DaHttpRequest, kv_store: &KvStore<T>, config: &Config) -> error::Result<DaOAuthClient<T>>
 where T: kv::Store,
 {
     let host = get_host(req, config)?;
@@ -369,8 +357,9 @@ where T: kv::Store,
     let shared_http_client = Arc::new(AtHttpClient::default());
     let http_client = AtHttpClient::default();
 
-    let state_store = AtKvStore{
-        kv_store,
+    let state_store = AtKvStore {
+        byte_kv: Arc::clone(&kv_store.byte_kv),
+        prefix: format!("/{}/atproto_oauth_state/", config.storage_prefix),
     };
 
     let root_uri = format!("https://{}", host);
@@ -379,7 +368,7 @@ where T: kv::Store,
 
     let client_metadata = AtprotoClientMetadata {
         client_id: meta_uri,
-        client_uri: root_uri,
+        client_uri: Some(root_uri),
         redirect_uris: vec![redirect_uri],
         token_endpoint_auth_method: AuthMethod::None,
         grant_types: vec![GrantType::AuthorizationCode],
@@ -406,6 +395,9 @@ where T: kv::Store,
             protected_resource_metadata: Default::default(),
         },
         state_store,
+        // DecentAuth currently uses the ATProto OAuth session only to obtain
+        // the DID at login; it does not retain the upstream access tokens.
+        session_store: MemorySessionStore::default(),
         http_client,
     };
 
@@ -413,4 +405,42 @@ where T: kv::Store,
     let client = client_res?;
 
     Ok(client)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn state_store(backend: Arc<kv::KvStore>, prefix: &str) -> AtKvStore<kv::KvStore> {
+        AtKvStore { byte_kv: backend, prefix: prefix.to_string() }
+    }
+
+    #[tokio::test]
+    async fn oauth_state_survives_a_new_store_and_is_deleted_after_use() {
+        // State and app state must survive the login/callback request boundary.
+        let backend = Arc::new(kv::KvStore::default());
+        let store = state_store(Arc::clone(&backend), "/test/atproto_oauth_state/");
+        let value: InternalStateData = serde_json::from_str(r#"{
+            "iss":"https://example.com", "verifier":"verifier", "app_state":"/welcome",
+            "dpop_key": {"kty":"EC", "crv":"P-256",
+                "x":"NIRNgPVAwnVNzN5g2Ik2IMghWcjnBOGo9B-lKXSSXFs",
+                "y":"iWF-Of43XoSTZxcadO9KWdPTjiCoviSztYw7aMtZZMc",
+                "d":"9MuCYfKK4hf95p_VRj6cxKJwORTgvEU3vynfmSgFH2M"}
+        }"#).unwrap();
+        store.set("nonce".to_string(), value.clone()).await.unwrap();
+        store.set("nonce-other".to_string(), value.clone()).await.unwrap();
+
+        let callback_store = state_store(Arc::clone(&backend), "/test/atproto_oauth_state/");
+        assert_eq!(callback_store.get(&"nonce".to_string()).await.unwrap(), Some(value.clone()));
+        assert_eq!(callback_store.get(&"missing".to_string()).await.unwrap(), None);
+        callback_store.del(&"nonce".to_string()).await.unwrap();
+        assert_eq!(store.get(&"nonce".to_string()).await.unwrap(), None);
+        assert_eq!(store.get(&"nonce-other".to_string()).await.unwrap(), Some(value.clone()));
+
+        let other = state_store(Arc::clone(&backend), "/other/atproto_oauth_state/");
+        other.set("nonce-other".to_string(), value).await.unwrap();
+        store.clear().await.unwrap();
+        assert!(store.get(&"nonce-other".to_string()).await.unwrap().is_none());
+        assert!(other.get(&"nonce-other".to_string()).await.unwrap().is_some());
+    }
 }

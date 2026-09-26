@@ -94,7 +94,7 @@ impl From<serde_json::Error> for kv::Error {
 
 
 struct KvStore<T: kv::Store> {
-    byte_kv: T,
+    byte_kv: std::sync::Arc<T>,
 }
 
 impl<T: kv::Store> KvStore<T> {
