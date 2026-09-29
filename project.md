@@ -1,73 +1,97 @@
-# OAuth hardening: planned work
+# DecentAuth project notes
 
-The built-in OAuth authorization-server endpoints currently enforce HTTP
-methods (`GET` for discovery and authorize, `POST` for approve and token).
-The only cross-site protection on the approval flow today is the session
-cookie's `SameSite=Lax` attribute. The items below are planned future work;
-none of them are implemented yet.
+## Purpose
 
-## Pending approvals
+This file is the project's durable, high-level memory. It records the most
+important completed work, current status, decisions and trade-offs, and future
+direction so that contributors do not have to reconstruct that context from the
+commit history.
 
-- Stop trusting the browser-supplied hidden `auth_url` field. When the
-  authorization endpoint renders the approval page, persist a short-lived
-  server-side pending-approval record and put only an unpredictable one-time
-  ID in the form.
-- Bind that record to the authenticated identity/session and to the validated
-  client ID and redirect URI. Consume it atomically (get-and-delete) at
-  approval time and expire it with a short TTL, so a forged or replayed
-  approval has no server-side state to act on.
+Keep it concise and focused on information that will remain useful. Detailed
+unresolved security findings and exploit information are intentionally kept in
+a private, free-floating security review rather than this repository. After an
+issue is mitigated, the resulting behavior and lasting design decisions can be
+summarized here.
 
-## CSRF defense in depth
+## Current status
 
-- Add an explicit per-session CSRF token to the approval form and validate it
-  on `POST /oauth/approve`.
-- Add same-origin `Origin`/`Sec-Fetch-Site` (Fetch Metadata) validation as a
-  second layer instead of relying solely on `SameSite=Lax`.
-- Residual risks to keep in mind: `SameSite=Lax` still sends cookies on
-  top-level cross-site GET navigations, and sibling subdomains are treated as
-  same-site. A page on an attacker-controlled sibling can therefore submit
-  requests to the auth host that carry the auth host's Lax cookies. Also, when
-  `id_header_name` is configured, the authenticated identity comes from an
-  upstream request header, so the deployment's reverse proxy must strip and
-  overwrite that header on all external requests.
+DecentAuth is a Rust authentication library with native and WASM/Extism build
+targets. It currently includes OIDC, AT Protocol, Fediverse, email, admin-code,
+QR, bearer-token, and session functionality. FedCM remains in the source tree
+for future development but is disabled at both server dispatch and UI rendering.
 
-## Authorization code binding
+The current security-remediation baseline includes:
 
-- Bind each authorization code to the client ID, the exact redirect URI, and
-  the S256 PKCE challenge (when supplied).
-- At token exchange, require the matching client and redirect URI and verify
-  the PKCE code verifier against the stored challenge before issuing a
-  session. Keep codes single-use and short-lived.
+- OIDC login accepts only an exact provider URI configured in
+  `Config.login_methods`; request-supplied providers cannot initiate discovery.
+- OAuth authorization-server endpoints enforce GET for metadata/authorization
+  and POST for approval/token exchange.
+- QR endpoints enforce GET for display and POST for approval/finalization.
+- Successful QR finalization removes its pending state, preventing sequential
+  reuse.
+- Focused regression tests cover these boundaries in both direct handler and
+  server-level paths.
 
-# QR login hardening: planned work
+At this baseline, `cargo test --all --all-targets --locked` passes 18 tests and
+the `wasm32-wasip1` release build succeeds. Known pre-existing compiler warnings
+remain outside this focused remediation work.
 
-The QR endpoints now enforce HTTP methods (`GET` for `<path_prefix>/qr`,
-`POST` for approval and finalization) and successful finalization deletes the
-pending QR state, so a key cannot be finalized sequentially a second time.
-The only cross-site protection on approval today is still the session cookie's
-`SameSite=Lax` attribute. The items below are planned future work; none of
-them are implemented yet.
+## Recent work
 
-## Separate approval and finalization secrets
+- Replaced project-specific dependency forks with upstream releases.
+- Preserved AT Protocol OAuth state across request boundaries using the KV
+  backend and delete it after callback use.
+- Added custom session data and bearer-token session lookup.
+- Disabled unfinished FedCM authentication without deleting its implementation,
+  allowing it to be completed deliberately later.
+- Added exact OIDC provider allowlisting while preserving the existing
+  configuration and template interface.
+- Added method enforcement and regression coverage for browser-facing OAuth and
+  QR state transitions.
 
-- The QR key is currently reused for both approval and finalization, so any
-  device that can read the QR code (for example a screen-sharing or video
-  capture) can also finalize it. Put only a separate approval secret in the
-  QR code, and keep a distinct finalization secret on the initiating device
-  that is never displayed or transmitted to the approving device.
-- Consider showing requesting-device context (user agent, IP/network region,
-  or a short code) on the approval page so the approving user can confirm the
-  request is theirs.
+## Decisions and trade-offs
 
-## State lifetime
+- **Configured OIDC providers are matched as exact strings.** This is simple,
+  fail-closed, and preserves the current UI. URL normalization and dynamic
+  provider discovery are intentionally deferred.
+- **FedCM stays compiled but disabled.** Keeping the implementation makes later
+  development easier, while re-enablement requires a deliberate code change and
+  renewed security review.
+- **Browser state changes rely on correct HTTP methods plus the explicit
+  `SameSite=Lax` session cookie for the current baseline.** Stronger defense in
+  depth remains desirable, but was deferred to keep the immediate changes small
+  and compatible.
+- **Security fixes are kept narrow.** Larger protocol redesigns and general
+  cleanup should be separate changes with their own tests and migration review.
+- **Sensitive unresolved findings stay outside the repository.** This document
+  records mitigated outcomes and architectural direction, not an exploit
+  backlog.
 
-- Give pending and approved QR state a short TTL and sweep expired entries,
-  so abandoned or leaked keys stop working quickly even if never consumed.
+## Future direction
 
-## Atomic consumption
+- Introduce reusable lifecycle support for transient authentication state,
+  including expiration and atomic state transitions.
+- Add defense in depth for browser approval and consent flows, such as
+  server-held request state and explicit same-origin/CSRF validation.
+- Complete session expiration and revocation semantics, including meaningful
+  server-side logout.
+- Continue clarifying provider-qualified identity and account-linking semantics
+  before expanding multi-provider behavior.
+- Finish FedCM only after its provider trust, response validation, and state
+  model have been fully specified and tested.
+- Upgrade older dependency stacks, keep advisories reviewed, and add automated
+  dependency auditing to CI.
+- Expand malformed-input, replay, concurrency, and protocol regression tests as
+  shared storage primitives improve.
 
-- The `Store` trait has no atomic take/get-and-delete. Finalization therefore
-  only prevents sequential replay; two concurrent finalizations of the same
-  key can both read the approved state before either deletes it. Add an atomic
-  take/get-and-delete operation to the trait and consume the pending state
-  with it before issuing a session, so exactly one finalization can win.
+## Verification baseline
+
+The main validation commands are:
+
+```sh
+cargo test --all --all-targets --locked
+cargo build --target wasm32-wasip1 --release --locked
+```
+
+Security-sensitive changes should add focused regression tests in addition to
+passing this baseline.
