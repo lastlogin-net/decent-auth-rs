@@ -38,3 +38,36 @@ none of them are implemented yet.
 - At token exchange, require the matching client and redirect URI and verify
   the PKCE code verifier against the stored challenge before issuing a
   session. Keep codes single-use and short-lived.
+
+# QR login hardening: planned work
+
+The QR endpoints now enforce HTTP methods (`GET` for `<path_prefix>/qr`,
+`POST` for approval and finalization) and successful finalization deletes the
+pending QR state, so a key cannot be finalized sequentially a second time.
+The only cross-site protection on approval today is still the session cookie's
+`SameSite=Lax` attribute. The items below are planned future work; none of
+them are implemented yet.
+
+## Separate approval and finalization secrets
+
+- The QR key is currently reused for both approval and finalization, so any
+  device that can read the QR code (for example a screen-sharing or video
+  capture) can also finalize it. Put only a separate approval secret in the
+  QR code, and keep a distinct finalization secret on the initiating device
+  that is never displayed or transmitted to the approving device.
+- Consider showing requesting-device context (user agent, IP/network region,
+  or a short code) on the approval page so the approving user can confirm the
+  request is theirs.
+
+## State lifetime
+
+- Give pending and approved QR state a short TTL and sweep expired entries,
+  so abandoned or leaked keys stop working quickly even if never consumed.
+
+## Atomic consumption
+
+- The `Store` trait has no atomic take/get-and-delete. Finalization therefore
+  only prevents sequential replay; two concurrent finalizations of the same
+  key can both read the approved state before either deletes it. Add an atomic
+  take/get-and-delete operation to the trait and consume the pending state
+  with it before issuing a session, so exactly one finalization can win.
