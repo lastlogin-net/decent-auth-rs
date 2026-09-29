@@ -356,6 +356,18 @@ fn parse_params(req: &DaHttpRequest) -> Option<Params> {
     None
 }
 
+// Returns the URI of the configured OIDC provider that exactly matches the
+// requested provider, if any. Request-supplied strings are never used as
+// provider URIs; only the trusted URI from `Config.login_methods` is returned.
+fn configured_oidc_provider_uri<'a>(config: &'a Config, requested: &str) -> Option<&'a str> {
+    config.login_methods.as_ref().and_then(|methods| {
+        methods.iter().find_map(|method| match method {
+            LoginMethod::Oidc { uri, .. } if uri == requested => Some(uri.as_str()),
+            _ => None,
+        })
+    })
+}
+
 fn handle<T>(req: DaHttpRequest, kv_store: &KvStore<T>, config: &Config, templater: &Templater) -> error::Result<DaHttpResponse> 
     where T: kv::Store
 {
@@ -430,9 +442,15 @@ fn handle<T>(req: DaHttpRequest, kv_store: &KvStore<T>, config: &Config, templat
             match login_type.as_str() {
                 // TODO: see if we can use actual enum for this
                 OIDC_STR => {
-                    let oidc_provider = params.get("oidc_provider");
-                    if let Some(oidc_provider) = oidc_provider {
-                        return oidc::handle_login(&req, kv_store, config, &oidc_provider);
+                    if let Some(oidc_provider) = params.get("oidc_provider") {
+                        // Only providers explicitly configured in login_methods are
+                        // allowed, and only the trusted configured URI is used.
+                        if let Some(configured_uri) =
+                            configured_oidc_provider_uri(config, oidc_provider)
+                        {
+                            return oidc::handle_login(&req, kv_store, config, configured_uri);
+                        }
+                        return Ok(DaHttpResponse::new(400, "Unconfigured OIDC provider"));
                     }
                     else {
                         return Ok(DaHttpResponse::new(400, "Missing OIDC provider"));
@@ -665,5 +683,103 @@ mod tests {
             !body.contains("FedCM"),
             "FedCM must not be offered in the login UI"
         );
+    }
+
+    fn oidc_test_config() -> Config {
+        test_config(vec![
+            LoginMethod::Oidc {
+                name: "Example".to_string(),
+                uri: "https://accounts.example.com".to_string(),
+            },
+            LoginMethod::AtProto,
+        ])
+    }
+
+    fn oidc_login_request(provider: &str) -> http::Request<bytes::Bytes> {
+        let body = format!(
+            "type={OIDC_STR}&oidc_provider={}",
+            urlencoding::encode(provider)
+        );
+        http::Request::builder()
+            .method("POST")
+            .uri("http://localhost/decent-auth/login")
+            .header("host", "localhost")
+            .body(bytes::Bytes::from(body))
+            .unwrap()
+    }
+
+    #[test]
+    fn oidc_provider_selection_requires_exact_match() {
+        let config = oidc_test_config();
+
+        assert_eq!(
+            configured_oidc_provider_uri(&config, "https://accounts.example.com"),
+            Some("https://accounts.example.com"),
+        );
+
+        for near_miss in [
+            "https://accounts.example.com/",
+            "https://accounts.example.com/path",
+            "https://accounts.example.com.evil.test",
+            "https://ACCOUNTS.example.com",
+            "accounts.example.com",
+        ] {
+            assert_eq!(
+                configured_oidc_provider_uri(&config, near_miss),
+                None,
+                "must not match {near_miss}",
+            );
+        }
+
+        assert_eq!(
+            configured_oidc_provider_uri(&test_config(vec![]), "https://accounts.example.com"),
+            None,
+        );
+    }
+
+    #[test]
+    fn oidc_login_rejects_unconfigured_provider() {
+        let server = Server::new(oidc_test_config(), MemoryKvStore::default());
+
+        let res = server.handle(oidc_login_request("https://evil.example.com"));
+
+        assert_eq!(res.status(), http::StatusCode::BAD_REQUEST);
+        assert_eq!(
+            res.body().as_ref(),
+            b"Unconfigured OIDC provider".as_slice()
+        );
+    }
+
+    #[test]
+    fn oidc_login_rejects_malformed_provider_before_url_parsing() {
+        let server = Server::new(oidc_test_config(), MemoryKvStore::default());
+
+        // "not a url" cannot be parsed as an issuer URL, so a 400 here proves
+        // the allowlist check runs before URL parsing or discovery. This test
+        // never performs an outbound request.
+        let res = server.handle(oidc_login_request("not a url"));
+
+        assert_eq!(res.status(), http::StatusCode::BAD_REQUEST);
+        assert_eq!(
+            res.body().as_ref(),
+            b"Unconfigured OIDC provider".as_slice()
+        );
+    }
+
+    #[test]
+    fn oidc_login_rejects_missing_provider() {
+        let server = Server::new(oidc_test_config(), MemoryKvStore::default());
+
+        let req = http::Request::builder()
+            .method("POST")
+            .uri("http://localhost/decent-auth/login")
+            .header("host", "localhost")
+            .body(bytes::Bytes::from(format!("type={OIDC_STR}")))
+            .unwrap();
+
+        let res = server.handle(req);
+
+        assert_eq!(res.status(), http::StatusCode::BAD_REQUEST);
+        assert_eq!(res.body().as_ref(), b"Missing OIDC provider".as_slice());
     }
 }
