@@ -44,13 +44,30 @@ fn send_error_json(message: &str, code: u16) -> error::Result<DaHttpResponse> {
     return Ok(res);
 }
 
+fn method_not_allowed(allowed: &str) -> DaHttpResponse {
+    let mut res = DaHttpResponse::new(405, "Method not allowed");
+    res.headers = BTreeMap::from([
+        ("Allow".to_string(), vec![allowed.to_string()]),
+    ]);
+    return res;
+}
+
+fn has_method(req: &DaHttpRequest, method: &str) -> bool {
+    req.method.as_deref()
+        .map(|m| m.eq_ignore_ascii_case(method))
+        .unwrap_or(false)
+}
+
 pub fn handle<T: kv::Store>(req: &DaHttpRequest, kv_store: &KvStore<T>, config: &Config, templater: &Templater) -> error::Result<DaHttpResponse> {
 
     let parsed_url = Url::parse(&req.url)?; 
     let path = parsed_url.path();
-    let params = parse_params(&req).unwrap_or(HashMap::new());
 
     if path == "/.well-known/oauth-authorization-server" {
+
+        if !has_method(req, "GET") {
+            return Ok(method_not_allowed("GET"));
+        }
 
         let host = get_host(req, config)?;
 
@@ -80,6 +97,12 @@ pub fn handle<T: kv::Store>(req: &DaHttpRequest, kv_store: &KvStore<T>, config: 
         return Ok(res);
     }
     else if path == &format!("{}/oauth/authorize", config.path_prefix) {
+
+        if !has_method(req, "GET") {
+            return Ok(method_not_allowed("GET"));
+        }
+
+        let params = parse_params(&req).unwrap_or(HashMap::new());
 
         let raw_query = format!("{}?{}", path, parsed_url.query().unwrap());
 
@@ -132,6 +155,12 @@ pub fn handle<T: kv::Store>(req: &DaHttpRequest, kv_store: &KvStore<T>, config: 
     }
     else if path == &format!("{}/oauth/approve", config.path_prefix) {
 
+        if !has_method(req, "POST") {
+            return Ok(method_not_allowed("POST"));
+        }
+
+        let params = parse_params(&req).unwrap_or(HashMap::new());
+
         let auth_url = params.get("auth_url").unwrap();
         let parsed_auth_url = Url::parse(auth_url)?; 
 
@@ -180,6 +209,12 @@ pub fn handle<T: kv::Store>(req: &DaHttpRequest, kv_store: &KvStore<T>, config: 
         return Ok(res);
     }
     else if path == &format!("{}/oauth/token", config.path_prefix) {
+
+        if !has_method(req, "POST") {
+            return Ok(method_not_allowed("POST"));
+        }
+
+        let params = parse_params(&req).unwrap_or(HashMap::new());
 
         let code = if let Some(code) = params.get("code") {
             code

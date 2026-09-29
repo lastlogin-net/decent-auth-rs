@@ -782,4 +782,146 @@ mod tests {
         assert_eq!(res.status(), http::StatusCode::BAD_REQUEST);
         assert_eq!(res.body().as_ref(), b"Missing OIDC provider".as_slice());
     }
+
+    fn oauth_config() -> Config {
+        test_config(vec![])
+    }
+
+    fn oauth_request(method: Option<&str>, url: &str, body: &str) -> DaHttpRequest {
+        DaHttpRequest {
+            url: url.to_string(),
+            headers: BTreeMap::from([("host".to_string(), vec!["localhost".to_string()])]),
+            method: method.map(|m| m.to_string()),
+            body: body.to_string(),
+        }
+    }
+
+    #[test]
+    fn oauth_approve_get_is_rejected_before_parsing_or_code_creation() {
+        use crate::kv::Store as _;
+
+        let byte_kv = std::sync::Arc::new(MemoryKvStore::default());
+        let kv_store = KvStore { byte_kv: byte_kv.clone() };
+        let templater = Templater::new();
+        let config = oauth_config();
+
+        // A malformed auth_url would produce an error (HTTP 500) if it were
+        // parsed, so a 405 proves the method guard runs first.
+        let req = oauth_request(
+            Some("GET"),
+            "http://localhost/decent-auth/oauth/approve?auth_url=not%20a%20url",
+            "",
+        );
+
+        let res = oauth::handle(&req, &kv_store, &config, &templater).unwrap();
+
+        assert_eq!(res.code, 405);
+        assert_eq!(res.headers.get("Allow"), Some(&vec!["POST".to_string()]));
+        assert!(
+            byte_kv.list("/").unwrap().is_empty(),
+            "rejected request must not create pending OAuth codes or sessions"
+        );
+    }
+
+    #[test]
+    fn oauth_endpoints_reject_missing_method() {
+        let byte_kv = std::sync::Arc::new(MemoryKvStore::default());
+        let kv_store = KvStore { byte_kv };
+        let templater = Templater::new();
+        let config = oauth_config();
+
+        for (url, allow) in [
+            ("http://localhost/.well-known/oauth-authorization-server", "GET"),
+            ("http://localhost/decent-auth/oauth/authorize", "GET"),
+            ("http://localhost/decent-auth/oauth/approve", "POST"),
+            ("http://localhost/decent-auth/oauth/token", "POST"),
+        ] {
+            let req = oauth_request(None, url, "");
+            let res = oauth::handle(&req, &kv_store, &config, &templater).unwrap();
+
+            assert_eq!(res.code, 405, "missing method must be rejected for {url}");
+            assert_eq!(res.headers.get("Allow"), Some(&vec![allow.to_string()]));
+        }
+    }
+
+    #[test]
+    fn oauth_endpoints_reject_wrong_methods() {
+        let server = Server::new(oauth_config(), MemoryKvStore::default());
+
+        for (method, uri, allow) in [
+            (
+                "POST",
+                "http://localhost/.well-known/oauth-authorization-server",
+                "GET",
+            ),
+            ("POST", "http://localhost/decent-auth/oauth/authorize", "GET"),
+            (
+                "GET",
+                "http://localhost/decent-auth/oauth/approve?auth_url=not%20a%20url",
+                "POST",
+            ),
+            (
+                "GET",
+                "http://localhost/decent-auth/oauth/token?code=abc",
+                "POST",
+            ),
+        ] {
+            let req = http::Request::builder()
+                .method(method)
+                .uri(uri)
+                .header("host", "localhost")
+                .body(bytes::Bytes::new())
+                .unwrap();
+
+            let res = server.handle(req);
+
+            assert_eq!(
+                res.status(),
+                http::StatusCode::METHOD_NOT_ALLOWED,
+                "{method} {uri} must be rejected"
+            );
+            assert_eq!(res.headers().get("allow").unwrap(), allow, "{method} {uri}");
+        }
+    }
+
+    #[test]
+    fn oauth_endpoints_accept_their_valid_methods() {
+        let server = Server::new(oauth_config(), MemoryKvStore::default());
+
+        let get = |uri: &str| {
+            http::Request::builder()
+                .method("GET")
+                .uri(uri)
+                .header("host", "localhost")
+                .body(bytes::Bytes::new())
+                .unwrap()
+        };
+        let post = |uri: &str, body: &str| {
+            http::Request::builder()
+                .method("POST")
+                .uri(uri)
+                .header("host", "localhost")
+                .body(bytes::Bytes::from(body.to_string()))
+                .unwrap()
+        };
+
+        let metadata = server.handle(get("http://localhost/.well-known/oauth-authorization-server"));
+        assert_eq!(metadata.status(), http::StatusCode::OK);
+
+        // Without a session, a valid-method GET is redirected to login rather
+        // than rejected by the method guard.
+        let authorize = server.handle(get(
+            "http://localhost/decent-auth/oauth/authorize?client_id=https://client.example.com&redirect_uri=https://client.example.com/cb",
+        ));
+        assert_eq!(authorize.status(), http::StatusCode::SEE_OTHER);
+
+        let approve = server.handle(post(
+            "http://localhost/decent-auth/oauth/approve",
+            "auth_url=https%3A%2F%2Fclient.example.com%2Fcb%3Fstate%3Dxyz",
+        ));
+        assert_eq!(approve.status(), http::StatusCode::SEE_OTHER);
+
+        let token = server.handle(post("http://localhost/decent-auth/oauth/token", "code=missing"));
+        assert_eq!(token.status(), http::StatusCode::BAD_REQUEST);
+    }
 }
