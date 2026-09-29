@@ -48,9 +48,16 @@ pub struct DataBuilder {
 impl DataBuilder {
     pub fn new(config: &Config) -> Self {
 
-        let login_methods = config.login_methods.clone().unwrap()
+        // FedCM is disabled crate-wide (see `crate::FEDCM_ENABLED`) and must
+        // not be offered in the UI, even when it is present in the config.
+        let login_methods = config
+            .login_methods
+            .clone()
+            .unwrap()
             .iter()
-            .map(|m| m.clone().into()).collect();
+            .filter(|m| !matches!(m, LoginMethod::FedCm) || crate::FEDCM_ENABLED)
+            .map(|m| m.clone().into())
+            .collect();
 
         Self{
             td: TemplateData{

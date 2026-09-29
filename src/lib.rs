@@ -65,6 +65,12 @@ const OIDC_STR: &str = "OIDC";
 const EMAIL_STR: &str = "Email";
 const FEDCM_STR: &str = "FedCM";
 
+/// FedCM is disabled until the vulnerabilities in its login flow are fixed.
+/// The implementation in `fedcm.rs` is retained so it can be completed later;
+/// re-enabling it deliberately means flipping this constant and updating the
+/// regression tests at the bottom of this file.
+const FEDCM_ENABLED: bool = false;
+
 #[derive(Clone,Debug,Serialize,Deserialize)]
 #[serde(tag = "type")]
 pub enum LoginMethod {
@@ -448,8 +454,14 @@ fn handle<T>(req: DaHttpRequest, kv_store: &KvStore<T>, config: &Config, templat
                     return email::handle_login(&req, kv_store, &config, templater);
                 },
                 FEDCM_STR => {
-                    return fedcm::handle_login(&req, kv_store, config, templater);
-                },
+                    // Fail closed: FedCM is not dispatched to its handler while
+                    // disabled, even when it is present in the configured login
+                    // methods or requested directly.
+                    if FEDCM_ENABLED {
+                        return fedcm::handle_login(&req, kv_store, config, templater);
+                    }
+                    return Ok(DaHttpResponse::new(400, "Invalid login type"));
+                }
                 &_ => {
                     return Ok(DaHttpResponse::new(400, "Invalid login type"))
                 },
@@ -580,3 +592,78 @@ fn get_host(req: &DaHttpRequest, config: &Config) -> error::Result<String> {
 //        println!("clear_expired_sessions: kv_store.list() failed");
 //    }
 //}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::kv::KvStore as MemoryKvStore;
+
+    fn test_config(login_methods: Vec<LoginMethod>) -> Config {
+        Config {
+            storage_prefix: "test".to_string(),
+            path_prefix: "/decent-auth".to_string(),
+            behind_proxy: false,
+            admin_id: None,
+            id_header_name: None,
+            login_methods: Some(login_methods),
+            smtp_config: None,
+            runtime: Some("test runtime".to_string()),
+        }
+    }
+
+    #[test]
+    fn fedcm_login_request_is_rejected_even_when_configured() {
+        let server = Server::new(
+            test_config(vec![LoginMethod::FedCm, LoginMethod::AtProto]),
+            MemoryKvStore::default(),
+        );
+
+        // A metadata endpoint that cannot be parsed as a URL guarantees that,
+        // even if the route guard regresses, `fedcm::handle_login` fails before
+        // opening a connection. This test never performs an outbound request.
+        let token = r#"{"code":"code","metadata_endpoint":"not a url"}"#;
+        let body = format!(
+            "type={FEDCM_STR}&token={}&pkce_code_verifier=verifier",
+            urlencoding::encode(token)
+        );
+        let req = http::Request::builder()
+            .method("POST")
+            .uri("http://localhost/decent-auth/login")
+            .header("host", "localhost")
+            .body(bytes::Bytes::from(body))
+            .unwrap();
+
+        let res = server.handle(req);
+
+        assert_eq!(res.status(), http::StatusCode::BAD_REQUEST);
+        assert_eq!(res.body().as_ref(), b"Invalid login type".as_slice());
+    }
+
+    #[test]
+    fn fedcm_is_not_offered_in_the_login_ui_even_when_configured() {
+        let server = Server::new(
+            test_config(vec![LoginMethod::FedCm, LoginMethod::AtProto]),
+            MemoryKvStore::default(),
+        );
+
+        let req = http::Request::builder()
+            .method("GET")
+            .uri("http://localhost/decent-auth/")
+            .header("host", "localhost")
+            .body(bytes::Bytes::new())
+            .unwrap();
+
+        let res = server.handle(req);
+
+        assert_eq!(res.status(), http::StatusCode::OK);
+        let body = std::str::from_utf8(res.body()).unwrap();
+        assert!(
+            body.contains("ATProto"),
+            "other login methods should remain available"
+        );
+        assert!(
+            !body.contains("FedCM"),
+            "FedCM must not be offered in the login UI"
+        );
+    }
+}
